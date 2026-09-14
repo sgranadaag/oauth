@@ -54,10 +54,13 @@ The current structure, per module (`client`, `user`, `oidc`):
   `client.repository.ts`, `client.service.ts`, `client.controller.ts`,
   `client.module.ts`), module folders singular
   (`src/modules/client/`).
-- Tests live under `src/tests/<module>/<name>.<role>.test.ts` — same
-  convention as before, entity/repository/service integration tests
-  hit real Postgres, controllers/guards stay e2e-only
-  (`test/rest/<name>.e2e-spec.ts`).
+- Tests live under `src/tests/<module>/<name>.<role>.test.ts`; the unit
+  layer covers **services, utils, and controllers** — see Alternatives
+  ("Unit-testing entities, repositories, and adapters"). Services mock
+  their repositories and controllers mock their services, so no unit
+  test touches Postgres. Everything else (entities, repositories,
+  adapters, guards) is verified through the e2e layer
+  (`test/**/*.e2e-spec.ts`) or not at all.
 
 Applied to the `oidc` module too, with two exceptions that were never
 candidates for this flattening because they aren't *our* ports to begin
@@ -76,7 +79,7 @@ with:
   the token-elimination direction doesn't apply to them.
 
 The password-grant handler is `PasswordGrantService`
-(`passwordGrant.service.ts`) — kept as its own file rather than folded
+(`grantTypes/passwordGrant.service.ts`) — kept as its own file rather than folded
 into some other service, since it is the module's one custom action and
 naming it for what it does (not `OidcService.something`) stays clearer.
 
@@ -87,25 +90,26 @@ unchanged from every earlier version of this design; see Alternatives.
 
 | Component | Repository | Added/Modified | Responsibility |
 |---|---|---|---|
-| `ClientEntity` (`client.entity.ts`) | oauth | Added | The entity *is* the TypeORM row shape — no separate domain class, no mapper. Plain `string id` (no VO): `Client`'s own id *is* the OAuth `client_id` — no separate business identifier field (collapsed after the two-identifier version produced a real FK bug in testing; see Alternatives). Secret is reversibly encrypted, not hashed — see Alternatives/Risks. |
+| `ClientEntity` (`client.entity.ts`) | oauth | Added | The entity *is* the TypeORM row shape — no separate domain class, no mapper. Plain `string id` (no VO): `Client`'s own id *is* the OAuth `client_id` — no separate business identifier field (collapsed after the two-identifier version produced a real FK bug in testing; see Alternatives). Secret is bcrypt-hashed (one-way), same as user passwords — see Alternatives/Risks. |
 | `ClientRepository` (`client.repository.ts`) | oauth | Added | Concrete class wrapping `Repository<ClientEntity>` — no port/interface/token. Exported by `ClientModule` so `UserModule`/`OidcModule` can inject it directly (Nest resolves a class as its own DI token). |
 | `ClientService` (`client.service.ts`) | oauth | Added | REQ-1.1/1.2: `create(name, allowedScopes)` generates credentials, encrypts the secret, persists via `ClientRepository`. |
 | `ClientController` (`client.controller.ts`) + `dto/` | oauth | Added | REST adapter (`POST /clients`, gated by `AdminGuard`), injecting `ClientService` directly by class. |
-| `AdminGuard` | oauth | Added | REQ-1.3: gates client creation behind a bootstrap admin credential. Cross-cutting, lives at `src/common/guards/`, unaffected by either layering reversal — e2e-tested only. |
-| `UserEntity` (`user.entity.ts`) | oauth | Added | Plain `clientId: string` field referencing the owning client — no VO, no `@ManyToOne` relation object, nothing here ever reads it as a relation. |
+| `AdminGuard` | oauth | Added | REQ-1.3: gates client creation behind a bootstrap admin credential. Cross-cutting, lives at `src/guards/` (its own top-level layer, alongside a currently-empty `src/middlewares/` — moved out of a since-removed `src/common/guards/` once guards and middleware were split into dedicated layers). Unaffected by any of the module-layering reversals — e2e-tested only. |
+| `UserEntity` (`user.entity.ts`) | oauth | Added | Parented by exactly one client, declared two ways deliberately: `clientId: string` (the plain FK column, what most code reads/writes) *and* `client: ClientEntity` (`@ManyToOne` + `@JoinColumn({ name: 'clientId' })`, `nullable: false`) so the parenting is explicit to TypeORM and the parent is loadable via `relations: { client: true }`. No ID value object — a relation to another entity is a different thing from an ID wrapper. See Alternatives. |
 | `UserRepository` (`user.repository.ts`) | oauth | Added | Concrete class wrapping `Repository<UserEntity>` — no port/interface/token. Exported by `UserModule`. |
 | `UserService` (`user.service.ts`) | oauth | Added | REQ-2: injects `ClientRepository` directly (cross-module) to validate the client exists (`NotFoundException` if not) and to read its current `allowedScopes` for the response; injects `UserRepository` to pre-check-and-reject a duplicate `(clientId, username)` with `ConflictException` before insert. Scope is never assigned here — REQ-2.4 is resolved live from the client, not stored per user. |
-| `UserController` (`user.controller.ts`) + `dto/` | oauth | Added | REST adapter (`POST /users`), injecting `UserService` directly by class. Gated by `ClientAuthGuard` — the caller authenticates as the owning client via HTTP Basic auth, the same credential shape `POST /oauth/token` uses, rather than the client being an unauthenticated path/body parameter. See Alternatives. |
-| `ClientAuthGuard` (`src/modules/client/clientAuth.guard.ts`) | oauth | Added | REQ-2.1: authenticates a caller as a specific client via `Authorization: Basic base64(clientId:clientSecret)` — decodes the header, looks up the client via `ClientRepository`, decrypts its stored secret for direct comparison (same mechanism `oidc-provider`'s own client auth uses), and attaches `clientId` to the request. Lives in the `client` module (not `common/guards/`, unlike `AdminGuard`) since it depends on `ClientRepository`; provided *and* exported by `ClientModule` so `UserModule` (which already imports `ClientModule`) can apply it to `UserController` via Nest's normal class-based DI. |
-| Signing key pair — `src/secrets/private.jwk.json`, `src/secrets/public.jwk.json` | oauth | Added | REQ-9.1: a static RS256 key pair, generated once by a setup script. `oidcProvider.factory.ts` reads the private file directly; the public file is what's handed to the frontend. No port/adapter/module — there's nothing here to swap. |
+| `UserController` (`user.controller.ts`) + `dto/` | oauth | Added | REST adapter (`POST /users`), injecting `UserService` directly by class. Gated by `BasicTokenGuard` — the caller authenticates as the owning client via HTTP Basic auth, the same credential shape `POST /oauth/token` uses, rather than the client being an unauthenticated path/body parameter. See Alternatives. |
+| `BasicTokenGuard` (`src/guards/basicToken.guard.ts`) | oauth | Added | REQ-2.1: authenticates a caller as a specific client via `Authorization: Basic base64(clientId:clientSecret)` — decodes the header, looks up the client via `ClientRepository`, `bcrypt.compare()`s the submitted secret against the stored hash, and attaches `clientId` to the request. Lives in the top-level `src/guards/` layer alongside `AdminGuard` — *every* guard does, including ones with a module dependency. `UserModule` (whose controller uses it, and which already imports `ClientModule` for `ClientRepository`) registers it as a provider: the layer owns the class, the consuming module owns the DI registration. |
+| Signing key pair — `src/secrets/private.pem`, `src/secrets/public.pem` | oauth | Added | REQ-9.1: a static RS256 key pair, generated once by a setup script. `@utils/keys.util` reads the private file; `@config/oidc.config` derives the provider JWKS from it; the public file is what's handed to the frontend. No port/adapter/module — there's nothing here to swap. |
 | `OidcModelEntity` (`oidcModel.entity.ts`) | oauth | Added | Generic TypeORM table (`modelName` + `id` + `payload` jsonb, plus `grantId`/`uid`/`userCode`/`expiresAt`/`consumedAt`) backing token/grant persistence. |
 | `OidcAdapter` (`oidc.adapter.ts`) | oauth | Added | Implements `oidc-provider`'s own `Adapter` interface (the real "port" here, defined by the library) against Postgres; for `modelName === 'Client'` it delegates to `ClientRepository` (injected directly, concrete class) instead of `OidcModelEntity`. |
-| `PasswordGrantService` (`passwordGrant.service.ts`) | oauth | Added | REQ-3 + the ROPC half of REQ-6. Injects `UserRepository` and `ClientRepository` directly (concrete classes, cross-module) and `OIDC_ERRORS`. Issues a genuine JWT access token (confirmed end-to-end, not hypothesized) via an explicit `new provider.ResourceServer(...)` passed to `AccessToken`'s `resourceServer` property. |
-| `OidcErrors` token (`oidcErrors.token.ts`) | oauth | Added | `OIDC_ERRORS` DI token + type alias for `oidc-provider`'s `errors` namespace — resolved once via async factory in `OidcModule`, so nothing downstream needs its own dynamic `import()` of the ESM-only package. Not affected by the port-elimination direction — see Architecture note. |
-| `DEFAULT_RESOURCE`, `SUPPORTED_SCOPES` constants | oauth | Added | Shared between `PasswordGrantService` and the bootstrap. `SUPPORTED_SCOPES` is a placeholder static vocabulary — see Risks; `oidc-provider` requires one, it has no concept of "whatever scopes exist in the clients table." |
+| `PasswordGrantService` (`grantTypes/passwordGrant.service.ts`) | oauth | Added | REQ-3 + the ROPC half of REQ-6. Injects `UserRepository` and `ClientRepository` directly (concrete classes, cross-module) and `OIDC_ERRORS`. Issues a genuine JWT access token (confirmed end-to-end, not hypothesized) via an explicit `new provider.ResourceServer(...)` passed to `AccessToken`'s `resourceServer` property. |
+| `OidcErrors` token (`oidc.constants.ts` / `oidc.interfaces.ts`) | oauth | Added | `OIDC_ERRORS` DI token + type alias for `oidc-provider`'s `errors` namespace — resolved once via async factory in `OidcModule`, so nothing downstream needs its own dynamic `import()` of the ESM-only package. Not affected by the port-elimination direction — see Architecture note. |
+| `DEFAULT_RESOURCE_INDICATOR`, `SUPPORTED_SCOPES` constants | oauth | Added | Shared between `PasswordGrantService` and the bootstrap. `SUPPORTED_SCOPES` is a placeholder static vocabulary — see Risks; `oidc-provider` requires one, it has no concept of "whatever scopes exist in the clients table." |
 | `OidcModule` | oauth | Added | Registers `PasswordGrantService` (plain class provider), `OIDC_ERRORS`, and `OIDC_PROVIDER` as Nest providers (imports `ClientModule`/`UserModule` to inject their exported repository classes directly), and `OidcController`. Fully self-contained — `main.ts` no longer does anything Oidc-specific. |
-| `oidcProvider.factory.ts` (`createOidcProvider(...)`, `OIDC_PROVIDER` async factory) | oauth | Added | Constructs the `Provider` instance (adapter, `jwks` read from `src/secrets/private.jwk.json`, `scopes`, `features.clientCredentials`/`resourceIndicators`, top-level `rotateRefreshToken`) and returns it — mounting is `OidcController`'s job now, not this file's. Deliberately *not* class-ified beyond a plain function — construction/wiring code with no anticipated second implementation. Verified end-to-end (not just configured) to cover REQ-4, REQ-5, REQ-7, REQ-8, REQ-9. |
-| `OidcController` (`oidc.controller.ts`) | oauth | Added | Injects `OIDC_PROVIDER`, mounts it as a proper NestJS controller (`@Controller('oauth')`, `@All('/*splat')` forwarding to `provider.callback()`) instead of raw `app.use()` middleware — consistent with every other REST-facing piece staying inside Nest's controller system. |
+| `OidcProvider` (`oidcProvider.ts`) | oauth | Added | A top-level `class OidcProvider extends Provider`, constructed with a named `OidcProviderDependencies` object. Its constructor passes `oidcIssuer(deps)`/`oidcConfig(deps)` to `super()`, then applies the two adjustments that only work on a live instance: `registerPasswordGrant()` and `useHashedClientSecrets()`. `OidcModule` news it up under the `OIDC_PROVIDER` token; mounting is `OidcController`'s job. Verified end-to-end (not just configured) to cover REQ-4, REQ-5, REQ-7, REQ-8, REQ-9. |
+| `oidcConfig` / `oidcIssuer` (`src/config/oidc.config.ts`) | oauth | Added | Every configuration decision about the provider — adapter, `jwks` (from `@utils/keys.util`), `scopes`, `rotateRefreshToken`, `features.clientCredentials`/`resourceIndicators` — in the config layer, mirroring `postgresConfig`'s shape for TypeORM. |
+| `OidcController` (`oidc.controller.ts`) | oauth | Added | Injects `OIDC_PROVIDER` and exposes **only the two endpoints this server uses**, each mapped explicitly: `@Post('token')` and `@Get('jwks')`, both delegating to `provider.callback()` via a shared private `forward()` that strips the `/oauth` prefix. Every other route the library implements (`/auth`, `/me`, `/session/end`, `/reg`, `/token/introspection`, `/token/revocation`, `/device`) is simply not mounted and 404s at the Nest layer. Replaced an earlier `@All('/*splat')` catch-all — see Alternatives. |
 
 Single repo (`oauth`) — matches requirements.md; everything is "Added"
 since the repo was empty at the start of this feature.
@@ -119,7 +123,7 @@ since the repo was empty at the start of this feature.
 @Entity('clients')
 class ClientEntity {
   @PrimaryColumn() id: string;
-  @Column() clientSecretEncrypted: string;   // reversible, not hashed — see Alternatives
+  @Column() clientSecretHash: string;        // bcrypt, one-way — see Alternatives
   @Column() name: string;
   @Column('text', { array: true }) allowedScopes: string[];
   @CreateDateColumn() createdAt: Date;
@@ -134,18 +138,17 @@ class ClientRepository {
 }
 
 // client.service.ts
-// utils/secretCipher.util.ts — AES-256-GCM, keyed by CLIENT_SECRET_ENCRYPTION_KEY; encryptSecret/decryptSecret
 interface CreateClientResult { client: ClientEntity; plainSecret: string }
 
 @Injectable()
 class ClientService {
   constructor(private readonly clientRepository: ClientRepository) {}
   async create(name: string, allowedScopes: string[]): Promise<CreateClientResult> {
-    const plainSecret = randomBytes(32).toString('hex');               // REQ-1.2
-    const clientSecretEncrypted = encryptSecret(plainSecret);          // reversible — see Alternatives
+    const plainSecret = randomUUID();                                  // REQ-1.2 — see Alternatives
+    const clientSecretHash = await bcrypt.hash(plainSecret, 12);       // one-way — see Alternatives
     const client = new ClientEntity();
     client.id = randomUUID();                                          // IS the OAuth client_id
-    client.clientSecretEncrypted = clientSecretEncrypted;
+    client.clientSecretHash = clientSecretHash;
     client.name = name;
     client.allowedScopes = allowedScopes;
     const saved = await this.clientRepository.save(client);
@@ -175,12 +178,17 @@ class ClientModule {}
 ```
 
 ```ts
-// --- user module (src/modules/user/) — same shape; cross-aggregate reference is a plain clientId: string ---
+// --- user module (src/modules/user/) — every user is parented by exactly one client ---
 @Entity('users')
 @Unique(['clientId', 'username'])
 class UserEntity {
   @PrimaryColumn() id: string;
-  @Column() clientId: string;      // FK to clients.id — plain field, no relation object
+  @Column() clientId: string;      // the plain FK column — what most code reads/writes
+  @ManyToOne(() => ClientEntity, { nullable: false })
+  @JoinColumn({ name: 'clientId' })
+  client: ClientEntity;            // the declared relation, backed by the column above
+                                   // (load with relations: { client: true } — TypeORM 1.x
+                                   //  removed the relations: ['client'] string-array form)
   @Column() username: string;
   @Column() passwordHash: string;
   @CreateDateColumn() createdAt: Date;
@@ -219,9 +227,9 @@ class UserService {
   }
 }
 
-// clientAuth.guard.ts (src/modules/client/) — same Basic-auth shape as POST /oauth/token
+// basicToken.guard.ts (src/guards/) — same Basic-auth shape as POST /oauth/token
 @Injectable()
-class ClientAuthGuard implements CanActivate {
+class BasicTokenGuard implements CanActivate {
   constructor(private readonly clientRepository: ClientRepository) {}
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request & { clientId: string }>();
@@ -229,7 +237,7 @@ class ClientAuthGuard implements CanActivate {
     if (!header?.startsWith('Basic ')) throw new UnauthorizedException('Missing client credentials');
     const [clientId, clientSecret] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(/:(.*)/);
     const client = await this.clientRepository.findByClientId(clientId);
-    if (!client || decryptSecret(client.clientSecretEncrypted) !== clientSecret) {
+    if (!client || !(await bcrypt.compare(clientSecret, client.clientSecretHash))) {
       throw new UnauthorizedException('Invalid client credentials');
     }
     request.clientId = clientId;    // route handler reads this instead of a :clientId param
@@ -237,11 +245,11 @@ class ClientAuthGuard implements CanActivate {
   }
 }
 
-// user.controller.ts — POST /users, gated by @UseGuards(ClientAuthGuard), injects UserService directly
+// user.controller.ts — POST /users, gated by @UseGuards(BasicTokenGuard), injects UserService directly
 @Controller('users')
 class UserController {
   constructor(private readonly userService: UserService) {}
-  @UseGuards(ClientAuthGuard) @Post()
+  @UseGuards(BasicTokenGuard) @Post()
   async create(@Req() request: Request & { clientId: string }, @Body() dto: CreateUserDto) {
     const { user, allowedScopes } = await this.userService.create(request.clientId, dto.username, dto.password);
     return UserResponseDto.fromEntity(user, allowedScopes);
@@ -249,20 +257,27 @@ class UserController {
 }
 
 // user.module.ts imports ClientModule and exports UserRepository (by class) the same way
-// ClientModule exports ClientRepository (and now ClientAuthGuard too), so OidcModule can
-// inject the repository for the password-grant lookup, and UserModule's own controller can
-// apply the guard — both via plain Nest DI, no token of any kind.
+// ClientModule exports ClientRepository, so OidcModule can inject the repository for the
+// password-grant lookup. UserModule also lists BasicTokenGuard in its own `providers` —
+// the guards layer owns the class, the module whose controller uses it owns the DI
+// registration, and ClientModule's export is what makes ClientRepository resolvable there.
+// All plain Nest class-based DI, no token of any kind.
 ```
 
 ```ts
 // --- Signing key pair (src/secrets/) — plain files, no module, no port/adapter ---
-// src/secrets/private.jwk.json  — one RS256 private JWK (RFC 7517 shape); fed into oidc-provider's `jwks`
-// src/secrets/public.jwk.json   — the matching public JWK; handed directly to the frontend
+// src/secrets/private.pem  — PKCS#1 RSA private key; signs access tokens
+// src/secrets/public.pem   — the matching public key; verifies them, safe to publish
 //
-// Read once, at bootstrap, wherever oidcProvider.factory.ts needs it:
-const privateJwk = JSON.parse(readFileSync(join(process.cwd(), 'src', 'secrets', 'private.jwk.json'), 'utf8'));
-// oidc-provider derives and serves the public half itself at `/oauth/jwks` (REQ-9.2) regardless;
-// public.jwk.json is the same key material handed out directly, e.g. checked into whatever the
+// PEM is the only on-disk format. @utils/jwt.util reads these directly via
+// jsonwebtoken. oidc-provider needs the key as a JWK Set instead, so
+// @utils/keys.util derives one in memory at bootstrap:
+const jwks = {
+  keys: [{ ...createPrivateKey(readFileSync('src/secrets/private.pem', 'utf8')).export({ format: 'jwk' }),
+           alg: 'RS256', use: 'sig' }],   // no `kid` — the library computes an RFC 7638 thumbprint
+};
+// oidc-provider derives and serves the public half itself at `/oauth/jwks` (REQ-9.2);
+// public.pem is the same key material handed out directly, e.g. bundled into whatever the
 // frontend build consumes, rather than fetched live — both are valid ways to satisfy REQ-9.2.
 ```
 
@@ -289,7 +304,9 @@ class OidcAdapter implements Adapter {
   ) {}
   // modelName === 'Client'  -> reads/writes via ClientRepository, mapped to
   //                            { client_id: client.id,
-  //                              client_secret: decryptSecret(client.clientSecretEncrypted),
+  //                              client_secret: client.clientSecretHash,  // the HASH, passed through
+  //                                              // unchanged — the patched compareClientSecret
+  //                                              // (below) bcrypt-compares against it
   //                              grant_types: ['client_credentials', 'password', 'refresh_token'],
   //                              redirect_uris: [], response_types: [],  // present-but-empty, or every
   //                                                                      // request 400s invalid_redirect_uri
@@ -307,7 +324,7 @@ class OidcAdapter implements Adapter {
 const OIDC_ERRORS = Symbol('OidcErrors');
 type OidcErrors = typeof import('oidc-provider').errors;
 
-// src/modules/oidc/passwordGrant.service.ts (grounded against @types/oidc-provider's
+// src/modules/oidc/grantTypes/passwordGrant.service.ts (grounded against @types/oidc-provider's
 // real declarations — Grant needs .addOIDCScope() explicitly, InvalidScope takes the offending
 // scope as a 2nd arg, ResourceServerInstance is built via `new provider.ResourceServer(...)`)
 @Injectable()
@@ -371,13 +388,13 @@ class PasswordGrantService {
   }
 }
 
-// --- oidcProvider.factory.ts: createOidcProvider(...) (deliberately unclassed wiring) ---
+// --- src/config/oidc.config.ts: oidcConfig(deps) ---
 // Verified end-to-end against the real library — this is what actually works, not a plan.
-// An OidcModule async factory (inject: [ConfigService, repository token, ClientRepository,
-// PasswordGrantService]) — no more app.get(...) from main.ts; Nest's DI resolves all of it.
-async function createOidcProvider(configService, oidcModelRepository, clientRepository, passwordGrantService) {
-  const { Provider } = await import('oidc-provider');   // ESM-only — see Risks
-  const provider = new Provider(configService.get<string>(ENV.OIDC_ISSUER) ?? '…', {
+// The Configuration object lives in the config layer; the OidcProvider class below is
+// constructed with it. `import { Provider } from 'oidc-provider'` is a plain static
+// import — see Alternatives on why the earlier dynamic-import wrapper is gone.
+function oidcConfig({ oidcModelRepository, clientRepository }): Configuration {
+  return {
     adapter: (modelName: string) => new OidcAdapter(modelName, oidcModelRepository, clientRepository),
     clients: [],                       // intentionally empty — see "Alternatives" below
     // 'offline_access' isn't a business scope (SUPPORTED_SCOPES is) — its mere presence is what
@@ -386,7 +403,7 @@ async function createOidcProvider(configService, oidcModelRepository, clientRepo
     // invalid_client_metadata, since the provider itself never recognizes the grant. Found by
     // reading the library's source directly, not docs — see Risks.
     scopes: [...SUPPORTED_SCOPES, 'offline_access'],
-    jwks,                              // REQ-9.1 — { keys: [...] }, read from src/secrets/private.jwk.json
+    jwks,                              // REQ-9.1 — derived from src/secrets/private.pem (above)
     rotateRefreshToken: true,          // REQ-5.4 — top-level Configuration property, NOT under features
     features: {
       clientCredentials: { enabled: true },
@@ -400,18 +417,47 @@ async function createOidcProvider(configService, oidcModelRepository, clientRepo
         }),
       },
     },
-  });
+  };
+}
+
+// --- src/modules/oidc/oidcProvider.ts ---
+// A top-level class: `Provider` is imported statically. OidcModule news this up under
+// the OIDC_PROVIDER token; mounting is OidcController's job.
+class OidcProvider extends Provider {
+  constructor(private readonly dependencies: OidcProviderDependencies) {
+    super(oidcIssuer(dependencies), oidcConfig(dependencies));
+    this.registerPasswordGrant();
+    this.useHashedClientSecrets();
+  }
+
   // 'scope' MUST be listed here too — omitted, oidc-provider silently drops any caller-supplied
   // scope from ctx.oidc.params before the handler runs, so REQ-6.3 (invalid_scope) never fires
   // and the request quietly succeeds with the full allowed set instead. Found by a failing e2e
   // test (T17), not by reading docs — nothing flagged this as required.
-  provider.registerGrantType('password', (ctx) => passwordGrantService.handle(ctx), ['username', 'password', 'scope']);
-  return provider;   // OidcModule provides this under OIDC_PROVIDER; mounting is OidcController's job
+  private registerPasswordGrant() {
+    this.registerGrantType(
+      'password',
+      (ctx) => this.dependencies.passwordGrantService.handle(ctx),
+      ['username', 'password', 'scope'],
+    );
+  }
+
+  // Client secrets are bcrypt hashes, not plaintext — the library's default
+  // compareClientSecret does a direct comparison, so it's overridden here. This is a real,
+  // typed method on the library's own Client class (lib/models/client.js, declared in
+  // @types/oidc-provider, called from lib/shared/client_auth.js), NOT a fork or a patch of
+  // a private internal. See Alternatives for why the original "no such hook exists"
+  // research was wrong.
+  private useHashedClientSecrets() {
+    this.Client.prototype.compareClientSecret = function (submitted: string) {
+      return bcrypt.compare(submitted, this.clientSecret ?? '');   // this.clientSecret === the stored hash
+    };
+  }
 }
 
 // src/modules/oidc/oidc.controller.ts — a proper NestJS controller instead of raw app.use()
-// middleware (an earlier approach, replaced — see Alternatives). Express 5 (this app's platform)
-// uses path-to-regexp v8: a bare '/*' wildcard is invalid, needs a named one ('/*splat').
+// middleware (an earlier approach, replaced — see Alternatives). Only the endpoints this
+// server actually uses are mapped; everything else the library implements stays unmounted.
 @Controller('oauth')
 class OidcController {
   private readonly callback: (req: Request, res: Response) => Promise<void>;   // inherited from
@@ -420,10 +466,21 @@ class OidcController {
   constructor(@Inject(OIDC_PROVIDER) provider: Provider) {
     this.callback = provider.callback();
   }
-  @All('/*splat')
-  async mounted(@Req() req: Request, @Res() res: Response): Promise<void> {
+
+  @Post('token')                                     // REQ-3/4/5 — all three grants
+  async token(@Req() req: Request, @Res() res: Response): Promise<void> {
+    await this.forward(req, res);
+  }
+
+  @Get('jwks')                                       // REQ-9.2
+  async jwks(@Req() req: Request, @Res() res: Response): Promise<void> {
+    await this.forward(req, res);
+  }
+
+  // Rewritten from originalUrl, not a hardcoded path, so query strings survive.
+  private async forward(req: Request, res: Response): Promise<void> {
     req.url = req.originalUrl.replace('/oauth', '');
-    await this.callback(req, res);   // -> POST /oauth/token, GET /oauth/jwks (REQ-9.2), etc.
+    await this.callback(req, res);
   }
 }
 
@@ -453,15 +510,15 @@ class OidcModelEntity {
 1. Admin calls `POST /clients` with a bootstrap admin credential and `{ name, allowedScopes }`.
 2. `AdminGuard` validates the credential against `ADMIN_API_KEY` (env var) — rejects otherwise.
 3. `ClientController` → `ClientService.create()`: generates a secret, encrypts it, constructs the `ClientEntity` directly (which gets its own `id` via `randomUUID()` — the OAuth `client_id`), saves via `ClientRepository`.
-4. Response returns the plaintext secret once; only the encrypted value is ever stored.
+4. Response returns the plaintext secret once; only the bcrypt hash is ever stored — it cannot be recovered afterward.
 
 **Signup (REQ-2)**
 1. `POST /users` with `{ username, password }`, authenticated as the
    owning client via `Authorization: Basic base64(clientId:clientSecret)`
    — the same credential shape `POST /oauth/token` uses.
-2. `ClientAuthGuard` decodes the header, looks up the client via
-   `ClientRepository`, decrypts its stored secret for comparison, and
-   attaches `clientId` to the request (401 if the header is missing,
+2. `BasicTokenGuard` decodes the header, looks up the client via
+   `ClientRepository`, `bcrypt.compare()`s the submitted secret against
+   the stored hash, and attaches `clientId` to the request (401 if the header is missing,
    malformed, or doesn't match a real client's credentials) — see
    Alternatives for why this replaced an unauthenticated `:clientId`
    path param.
@@ -483,7 +540,7 @@ class OidcModelEntity {
 - *Resource Owner Password Credentials (REQ-3, REQ-6)*: `oidc-provider` parses the request, authenticates the client, confirms `password` is an allowed grant for it, then calls the bootstrap closure wrapping `PasswordGrantService.handle(ctx)` (above), which owns user lookup (via `UserRepository`) plus a follow-up `ClientRepository` lookup for scope resolution (since `User` only holds a plain `clientId`), credential check, and scope-ceiling enforcement by hand, since this grant has no built-in support.
 - *Refresh Token (REQ-5)*: handled natively — `oidc-provider` looks up the refresh token via `OidcAdapter`, rejects if expired/revoked/consumed (`invalid_grant`, REQ-5.2), enforces requested scope ⊆ original grant (REQ-5.3), issues a new access token *and* a new refresh token while invalidating the one just used (REQ-5.4, `features.rotateRefreshToken`).
 - Every path renders errors and success responses in `oidc-provider`'s own RFC 6749 §5.1/§5.2 shape (REQ-7, REQ-8) — no custom error mapping needed.
-- Every access token, regardless of which grant issued it, is a JWT signed with the private key read from `src/secrets/private.jwk.json` at bootstrap (REQ-9.1). `oidc-provider` also derives the public half itself and serves it at `/oauth/jwks`; `src/secrets/public.jwk.json` is the same key handed directly to the frontend as a file rather than fetched live — either way satisfies REQ-9.2, a frontend (or any other party) verifies a token's origin independently, without ever calling back to this server. Refresh tokens are never JWTs (REQ-9.3) — rotation (REQ-5.4) and revocation still go through `OidcAdapter` as opaque references.
+- Every access token, regardless of which grant issued it, is a JWT signed with the private key read from `src/secrets/private.pem` at bootstrap (REQ-9.1). `oidc-provider` also derives the public half itself and serves it at `/oauth/jwks`; `src/secrets/public.pem` is the same key handed directly to the frontend as a file rather than fetched live — either way satisfies REQ-9.2, a frontend (or any other party) verifies a token's origin independently, without ever calling back to this server. Refresh tokens are never JWTs (REQ-9.3) — rotation (REQ-5.4) and revocation still go through `OidcAdapter` as opaque references.
 
 ## Alternatives considered and rejected
 
@@ -517,6 +574,31 @@ Dropped along with the `nest-hexagonal` layering reversal above. Their
 only job was wrapping a `string` id with a `create()`/`from()`/`get()`
 API; once entities went back to plain public fields, a VO wrapping a
 single field added a layer with no behavior of its own to justify it.
+
+### A bare `clientId: string` on `UserEntity`, with no declared relation
+
+**Superseded.** When the VOs were dropped, `User`'s reference to its
+owning client collapsed to a single plain column with an explicit "no
+`@ManyToOne` relation object, nothing here ever reads it as a relation"
+note. The FK constraint existed in Postgres the whole time, but nothing
+in the entity layer said so.
+
+Reversed per explicit direction — every user must be *parented* by a
+client, and that parenting should be visible in the model, not only in
+the schema. `UserEntity` now declares both `clientId: string` and
+`client: ClientEntity` (`@ManyToOne` + `@JoinColumn({ name: 'clientId' })`,
+`nullable: false`). Keeping both is the point: the column stays the
+cheap path most code uses, while the relation makes the constraint
+explicit to TypeORM and lets a caller load the parent on demand.
+
+Notably this needed **no migration** — the FK (`users_clientId_fkey`)
+and the `NOT NULL` on `clientId` were already there from `CreateUsers`
+(re-added by `PlainStringIds`), so the declaration simply describes
+schema that already existed. Verified directly against Postgres:
+constraint present, column non-nullable, and an orphan insert rejected.
+
+This does not reopen the VO decision above — a relation to another
+entity is a different thing from a wrapper around an id.
 
 ### `uuid` as the Postgres column type for `id`/`clientId`
 
@@ -599,26 +681,180 @@ created afterward without a restart. Routing `Client` lookups through
 `OidcAdapter` → `ClientRepository` instead keeps client creation
 (REQ-1) and client authentication (REQ-4) reading the same data.
 
-### Storing client secrets bcrypt-hashed, same as user passwords
+### Reversible AES-256-GCM encryption for client secrets
 
-Rejected, resolved during T14 (was flagged as an open Risk until then).
-`oidc-provider`'s default `client_secret_basic`/`client_secret_post`
-authentication does a direct comparison against the Client metadata's
-`client_secret` field, which a one-way hash can't satisfy — confirmed
-by checking the library's own docs for a hashed-secret hook (none
-documented: no `compareClientSecret` callback, no override point for
-symmetric-secret verification, only `clientAuthMethods` to pick which
-methods are *enabled*). Patching/forking the library to add one was
-the only way to keep bcrypt-hashing, and was rejected as disproportionate
-for a reference implementation. **Adopted instead: reversible
-encryption-at-rest** (AES-256-GCM, `src/utils/secretCipher.util.ts`,
-keyed by `CLIENT_SECRET_ENCRYPTION_KEY`) — `ClientEntity.clientSecretEncrypted`
-is decrypted back to plaintext inside `OidcAdapter`'s `Client`
-mapping before being handed to the library, so its built-in comparison
-works unmodified. Trade-off, accepted deliberately: a compromised
-`CLIENT_SECRET_ENCRYPTION_KEY` exposes every stored client secret,
-unlike a one-way hash — acceptable here because the alternative was
-forking a third-party library for a teaching reference implementation.
+**Superseded — and it was adopted on the strength of a factual error,
+which is the more important thing recorded here.**
+
+Originally (T14) client secrets were stored AES-256-GCM encrypted,
+reversibly, keyed by a dedicated env var, and decrypted back to
+plaintext inside `OidcAdapter`'s `Client` mapping.
+The stated justification was that `oidc-provider`'s default
+`client_secret_basic`/`client_secret_post` authentication compares
+plaintext directly, with "no documented hook" for hash comparison —
+supposedly leaving forking the library as the only alternative.
+
+**That research was wrong.** `Client#compareClientSecret(actual)` is a
+real method on the library's own `Client` class
+(`lib/models/client.js`), declared in `@types/oidc-provider`, and
+invoked by `lib/shared/client_auth.js` for exactly these two auth
+methods. Overriding it is a supported extension point, not a fork and
+not a monkey-patch of a private internal. The original conclusion was
+reached by searching the prose docs rather than the library's actual
+source and type declarations — the same "read the real thing, don't
+infer from docs" lesson this design records repeatedly elsewhere,
+applied too late in this one case.
+
+**Current: bcrypt (cost 12), one-way, identical to user passwords.**
+`ClientService.create()` hashes the generated secret;
+`ClientEntity.clientSecretHash` stores it; `OidcAdapter` passes that
+hash through *unchanged* as the client metadata's `client_secret`; and
+the `OidcProvider` class overrides `compareClientSecret` to
+`bcrypt.compare()` the submitted value against it. `BasicTokenGuard`
+(`POST /users`) does its own `bcrypt.compare` against the same column.
+`secretCipher.util.ts` and the encryption-key env var were deleted
+outright — no reversible path remains anywhere in the codebase, and the
+"compromised encryption key exposes every client secret" trade-off that
+had to be accepted before is simply gone.
+
+Two real costs of the change, both accepted: bcrypt at cost 12 is
+~600ms per hash, so e2e fixtures needed `testTimeout: 30000`
+(`test/jest-e2e.json`); and every previously-issued client secret
+became unusable at the migration boundary (`HashClientSecret`, a plain
+column rename — old ciphertext is meaningless when compared as a bcrypt
+hash), so any client provisioned before it needs a newly-issued secret.
+
+### Unit-testing entities, repositories, and adapters
+
+Superseded per explicit direction: the unit layer covers **business
+logic only — services and utils**. Everything else is either a thin
+wrapper over TypeORM/Nest or already exercised end-to-end, so it gets no
+unit test of its own.
+
+Five suites were deleted outright when this landed:
+`client.entity.test.ts`, `user.entity.test.ts`,
+`oidcModel.entity.test.ts`, `oidc.adapter.test.ts`, and
+`signingKeys.test.ts`. What survives is `client.service.test.ts`,
+`user.service.test.ts`, and `passwordGrant.service.test.ts`.
+
+A useful side effect: every deleted suite was one that hit real
+Postgres, and every DB-related test problem this project ran into came
+from exactly those — the `TRUNCATE`-across-a-live-FK failure, the
+ACCESS EXCLUSIVE lock timeout, and the table-wide-cleanup collisions all
+lived in entity suites (see Risks). The surviving service tests mock
+their repositories, so the unit layer no longer needs a database at all.
+
+The e2e layer was deliberately **kept**. It boots the real `AppModule`
+and covers the OAuth grant flows plus the REST endpoints — that's the
+business logic this project actually exists to implement, just exercised
+through HTTP rather than in isolation, and it is now the only automated
+coverage of the `oidc-provider` wiring.
+
+**Amended:** controllers were later added back to the unit layer
+(`client.controller.test.ts`, `user.controller.test.ts`,
+`oidc.controller.test.ts`), per explicit direction. They're instantiated
+directly with a mocked service, so these cover the handler body only —
+what it forwards, and what shape it maps back. Guards, DI wiring,
+validation pipes, and status codes are untouched by them and remain
+e2e-only. The most valuable thing they pin down is `UserController`
+reading `clientId` from the guard-populated request rather than the
+request body, and `OidcController`'s `/oauth` prefix rewrite, which is
+otherwise only observable through a live server.
+
+### Storing the signing key as `.jwk.json` files alongside the PEM
+
+**Superseded.** `src/secrets/` used to hold four files: a PEM pair *and*
+a JWK pair, on the belief that `oidc-provider` could only be given a JWK.
+
+Half of that is true — its `jwks` config genuinely rejects a PEM
+(`lib/helpers/initialize_keystore.js` asserts the value is a JWK Set
+object). But the *file* never had to be a JWK: node converts one from the
+other in a line, `createPrivateKey(pem).export({ format: 'jwk' })`.
+Keeping both formats on disk meant two artifacts that could drift, for no
+benefit.
+
+Now `src/secrets/` holds only `private.pem` / `public.pem`, and the
+factory derives the JWK Set in memory at boot. The generator script emits
+PEM only, which also removed the last dependency on `jose` (uninstalled).
+
+Two consequences: the published `kid` is now an RFC 7638 thumbprint the
+library computes (`key.kid ??= calculateKid(key)`) rather than a random
+UUID we generated, so tokens issued before this change reference a `kid`
+that `/oauth/jwks` no longer advertises — regenerate and reissue. And
+`alg: 'RS256'` / `use: 'sig'` are set explicitly on the derived key;
+both are optional for RSA in the library's validation, but stating them
+keeps the key single-purpose.
+
+### Building the provider with a plain factory function rather than a subclass
+
+**Superseded, in two steps.** `createOidcProvider` originally constructed
+`new Provider(...)` and then mutated it —
+`provider.registerGrantType(...)`,
+`provider.Client.prototype.compareClientSecret = ...` — as loose
+statements after the fact.
+
+The first attempt at a class had to declare it *inside* the async
+factory, on the reasoning that `Provider` is ESM-only and a CJS module
+cannot `extends` a class it can only reach through `await import()`.
+
+**That reasoning was outdated.** Node 22.12+/24 support `require()` of
+ESM modules that have no top-level await, and `oidc-provider` qualifies —
+confirmed directly (`require('oidc-provider')` returns `Provider`), and a
+static `import { Provider } from 'oidc-provider'` compiles cleanly under
+this project's `nest build`. So the wrapper was never load-bearing on
+this runtime.
+
+Current shape: `src/modules/oidc/oidcProvider.ts` exports a top-level
+`class OidcProvider extends Provider`, constructed with a named
+`OidcProviderDependencies` object. Its constructor passes
+`oidcIssuer(deps)` and `oidcConfig(deps)` to `super()`, then applies the
+two adjustments that can only be made to a live instance —
+`registerPasswordGrant()` and `useHashedClientSecrets()`. The factory
+function is gone entirely, as is `oidcProvider.factory.ts`.
+
+Knock-on effects: `OidcModule` now imports `errors` statically and
+provides it with `useValue` instead of an async factory, and **no runtime
+dynamic import remains anywhere in `src/`** — which very likely makes
+`--experimental-vm-modules` on `test:e2e` unnecessary, though that has not
+been re-tested. The constraint only returns if this ever targets
+Node < 22.12.
+
+### Configuring the provider inline in the factory
+
+**Superseded.** The whole `Configuration` object used to be built inside
+the same file that constructed the provider. It now lives in
+`src/config/oidc.config.ts` as `oidcConfig(deps)` / `oidcIssuer(deps)`,
+matching the shape `postgresConfig(configService)` already had for
+TypeORM — configuration decisions belong in the config layer, not inside
+the thing being configured. Only the two live-instance adjustments stayed
+with the class.
+
+### Key-file reading spread across the files that needed it
+
+**Superseded.** The provider factory read `private.pem` to derive its
+JWK Set while `jwt.util` separately read both PEMs for signing and
+verification. That is now one owner: `src/utils/keys.util.ts` exposes
+`getPrivateKeyPem()`, `getPublicKeyPem()` and `getSigningJwks()`, each
+cached, and is the only module that touches `src/secrets/`. `jwt.util`
+consumes it for token operations; `oidc.config` consumes it for the
+provider's `jwks`.
+
+### A 256-bit random hex string as the client secret
+
+Superseded per explicit direction: every generated identifier and
+credential in this system is now a UUIDv4 — `ClientEntity.id` (the OAuth
+`client_id`), `UserEntity.id`, and the client secret — produced by
+`crypto.randomUUID()`, which is CSPRNG-backed. The first two were
+already UUIDs; the secret was previously `randomBytes(32).toString('hex')`.
+
+The trade-off, noted rather than hidden: a UUIDv4 carries 122 bits of
+entropy versus 256 for the old value. That is still far outside
+brute-force reach (comparable to a 128-bit key), and the secret is
+bcrypt-hashed at rest regardless, so the practical security margin is
+unchanged — but it *is* a reduction, and anyone raising the bar later
+should reach for `randomBytes` rather than assume the UUID was chosen
+for strength. It was chosen for format consistency across every
+identifier the API hands out.
 
 ### A separate internal `id` distinct from the public OAuth `client_id`
 
@@ -651,15 +887,43 @@ shape. Revisit if a real second resource server ever shows up.
 Tried first (T16), then replaced — not because it didn't work (it did,
 verified through all of T16–T18's e2e tests), but because it meant the
 one HTTP-facing piece of this app that wasn't a proper Nest controller.
-`OidcController` (`@Controller('oauth')`, `@All('/*splat')`) now owns
-mounting instead, injecting `OIDC_PROVIDER` (moved into `OidcModule`'s
-DI graph as an async factory) rather than `main.ts` calling `app.get(...)`
-manually after the fact. Functionally identical; consistent with every
-other REST-facing piece staying inside Nest's controller system was the
-actual reason to change it. Required knowing Express 5 (this app's
-platform) uses path-to-regexp v8, where a bare `'/*'` wildcard — valid
-in Express 4 examples — is rejected; the fix is a named wildcard
-(`'/*splat'`).
+`OidcController` (`@Controller('oauth')`) now owns mounting instead,
+injecting `OIDC_PROVIDER` (moved into `OidcModule`'s DI graph as an
+async factory) rather than `main.ts` calling `app.get(...)` manually
+after the fact. Functionally identical; consistent with every other
+REST-facing piece staying inside Nest's controller system was the
+actual reason to change it.
+
+### Forwarding every `oidc-provider` route through one `@All('/*splat')` wildcard
+
+**Superseded.** The first controller version was a single catch-all
+handler that rewrote `req.url` and passed *anything* under `/oauth` to
+`provider.callback()`. That worked, but it meant the app's public
+surface was "whatever the library implements" rather than a decision —
+`/auth`, `/me`, `/session/end`, `/reg`, `/token/introspection`,
+`/token/revocation`, and the device-flow endpoints were all reachable
+despite being Non-goals with no consent UI behind them. This was
+already logged as an open Risk ("Unused routes still mounted").
+
+Replaced per explicit direction with one explicit mapping per endpoint
+actually used — `@Post('token')` and `@Get('jwks')`, the only two
+referenced anywhere in the e2e suite, the Postman collection, or the
+README. Both delegate to a shared private `forward()` that does the same
+`/oauth`-prefix strip as before, so `provider.callback()` still performs
+all RFC-mandated parsing, client authentication, and validation; only
+the set of paths that reach it changed. Everything else 404s at the Nest
+layer, which closes that Risk.
+
+Two consequences worth noting: the catch-all also handled non-GET/POST
+verbs (e.g. `OPTIONS` preflight) for those paths and no longer does, and
+adding any further `oidc-provider` endpoint later (discovery at
+`/.well-known/openid-configuration`, introspection, revocation) is now a
+deliberate one-line addition rather than something already live. That
+trade — explicit surface over automatic coverage — is the point.
+
+Incidentally this retires a piece of Express-5 trivia the wildcard
+needed: path-to-regexp v8 rejects a bare `'/*'`, which is why the
+catch-all had to be the named `'/*splat'`. Named routes sidestep it.
 
 ### A dedicated Secrets module (port + adapter) for the signing key pair
 
@@ -676,12 +940,12 @@ mechanism, unchanged across every revision of this design.
 
 Tried first (matches REQ-2.1's literal wording — "providing that
 client's identifier" — read as a bare parameter), then replaced with
-`POST /users` gated by `ClientAuthGuard` and its own Basic-auth check.
+`POST /users` gated by `BasicTokenGuard` and its own Basic-auth check.
 Rejected on reflection because it let anyone who merely *knew* (or
 guessed/enumerated) a valid `client_id` create users under a client they
 had no other relationship to — the client's identifier alone was never
 meant to be a secret, so anything gated only by it isn't gated at all.
-`ClientAuthGuard` requires the *secret* too, the same credential pair
+`BasicTokenGuard` requires the *secret* too, the same credential pair
 `POST /oauth/token` already requires, so a caller can only create users
 under a client it can actually authenticate as. Still satisfies REQ-2.1
 ("providing that client's identifier") — the identifier is still
@@ -692,11 +956,42 @@ unknown client is effectively dead code from this one HTTP path now
 runs) but is left in place, since the service method has its own
 contract independent of which controller happens to call it today.
 
+### A single catch-all `src/common/` folder for cross-cutting code
+
+`src/common/guards/admin.guard.ts` was the only thing `common/` ever
+held. Rejected as a long-term home per explicit direction: a
+general-purpose "put unclassified things here" folder tends to
+accumulate unrelated code with nothing but "doesn't fit elsewhere" in
+common. Replaced with dedicated top-level layers named for what they
+actually are — `src/guards/` (route-level allow/deny guards) and
+`src/middlewares/` (request-level Express/Nest middleware, currently
+empty — nothing has needed one yet, but the layer exists so the first
+one has an obvious home instead of prompting another `common/`-style
+folder). `src/common/` itself was deleted once empty, not kept around
+as a placeholder.
+
+### Keeping a repository-dependent guard inside its module
+
+**Superseded.** `BasicTokenGuard` (then `ClientAuthGuard`) originally
+lived in `src/modules/client/` on the reasoning that a guard needing
+`ClientRepository` belonged with the module that owns that repository,
+leaving `src/guards/` for dependency-free guards like `AdminGuard`.
+Reversed per explicit direction: **every** guard lives in
+`src/guards/`, no exceptions. The module dependency turned out not to
+need a location rule at all — the layer holds the class, and the module
+whose controller applies it registers it as a provider (`UserModule`
+lists `BasicTokenGuard`, and already imports `ClientModule` for
+`ClientRepository`). Splitting guards across two homes by dependency
+shape made "where does this guard live?" a judgment call on every new
+guard; one layer makes it not a question. Renamed in the same pass —
+`ClientAuthGuard` → `BasicTokenGuard`, naming it for the credential
+mechanism it checks rather than the entity it happens to look up.
+
 ## Requirement coverage
 
 "OidcProviderModule" below refers collectively to `OidcModule` (the Nest
 provider registrations, including the `OIDC_PROVIDER` async factory),
-`oidcProvider.factory.ts` (`createOidcProvider(...)`, the actual
+`oidcProvider.ts` (the `OidcProvider` class, the actual
 `Provider` construction), and `OidcController` (mounts it) — three
 files, not one literal `OidcProviderModule.ts`.
 
@@ -705,7 +1000,7 @@ files, not one literal `OidcProviderModule.ts`.
 | REQ-1.1 | `Client` module (`ClientService`, `ClientRepository`) |
 | REQ-1.2 | `Client` module |
 | REQ-1.3 | AdminGuard |
-| REQ-2.1 | `User` module (`UserService`, `UserRepository`) + `ClientAuthGuard` (client identity via Basic auth, not an unauthenticated path param) |
+| REQ-2.1 | `User` module (`UserService`, `UserRepository`) + `BasicTokenGuard` (client identity via Basic auth, not an unauthenticated path param) |
 | REQ-2.2 | `UserService` (pre-check → `ConflictException`) + DB unique constraint on `(clientId, username)` as a backstop |
 | REQ-2.3 | `User` module (response DTO omits password) |
 | REQ-2.4 | `UserService` (reads `client.allowedScopes` live) |
@@ -731,8 +1026,8 @@ files, not one literal `OidcProviderModule.ts`.
 | REQ-8.1 | OidcProviderModule (native error rendering) |
 | REQ-8.2 | OidcProviderModule (native) |
 | REQ-8.3 | OidcProviderModule (native RFC 6749 error shape) |
-| REQ-9.1 | Signing key pair (`src/secrets/private.jwk.json`) + OidcProviderModule (`jwks` + `features.resourceIndicators`) |
-| REQ-9.2 | OidcProviderModule (native `/jwks` route) + `src/secrets/public.jwk.json` (handed directly to the frontend) |
+| REQ-9.1 | Signing key pair (`src/secrets/private.pem`) + OidcProviderModule (`jwks` + `features.resourceIndicators`) |
+| REQ-9.2 | OidcProviderModule (native `/jwks` route) + `src/secrets/public.pem` (handed directly to the frontend) |
 | REQ-9.3 | OidcProviderModule (native library behavior — refresh tokens never go through `resourceIndicators`) |
 
 Uncovered requirements: none.
@@ -740,13 +1035,23 @@ Uncovered requirements: none.
 ## Risks
 
 - **Resolved: client secret storage vs. `oidc-provider`'s built-in
-  auth.** See the "Storing client secrets bcrypt-hashed" alternative
-  above — resolved as reversible AES-256-GCM encryption, decrypted
-  inside `OidcAdapter`'s `Client` mapping (T14). The residual
-  risk is operational, not architectural: `CLIENT_SECRET_ENCRYPTION_KEY`
-  is a plain env var for now, with no rotation story — if it's ever
-  rotated, every stored client secret becomes undecryptable unless
-  re-encrypted first.
+  auth.** See the "Reversible AES-256-GCM encryption for client secrets"
+  alternative above. Resolved *twice*: first (T14, wrongly) as reversible
+  encryption, on the false premise that no hash-comparison hook existed;
+  then correctly as bcrypt + a `Client#compareClientSecret` override.
+  No residual key-management risk remains — there is no encryption key
+  to rotate or leak, and no reversible path to any stored secret. The
+  lesson worth carrying forward is procedural, not cryptographic: the
+  original conclusion came from searching prose docs instead of the
+  library's source and `.d.ts`, which is exactly the failure mode the
+  rest of this document repeatedly warns about.
+- **New, unaddressed: `compareClientSecret` is overridden on the
+  prototype, process-wide.** The override in `OidcProvider`
+  mutates `provider.Client.prototype`, so it applies to every `Client`
+  instance that provider creates. That's correct here (every client in
+  this system stores a bcrypt hash) but would silently break any future
+  client whose secret is stored some other way — there's no per-client
+  dispatch. Revisit if mixed secret formats ever become a requirement.
 - **Dynamic `Client` lookup via the adapter.** This design assumes that
   passing `clients: []` (or omitting it) routes every client lookup
   through `OidcAdapter` → `ClientRepository`. Confirmed working against
@@ -772,19 +1077,22 @@ Uncovered requirements: none.
   `moduleRef.get(...)` at startup — fine for a stateless singleton
   handler, but worth confirming nothing about it needs to be
   request-scoped before relying on that shape.
-- **Unused routes still mounted.** `provider.callback()` mounts the
-  library's full route set (including the authorization endpoint), even
-  though this design never drives a user through it (no consent UI,
-  Authorization Code excluded). Worth confirming those routes fail
-  closed rather than becoming unreviewed surface area.
+- **Resolved: unused routes are no longer mounted.** `provider.callback()`
+  still *implements* the library's full route set, but `OidcController`
+  now exposes only `@Post('token')` and `@Get('jwks')` explicitly, so
+  nothing else is reachable — the authorization endpoint, `/me`,
+  `/session/end`, `/reg`, introspection, revocation, and the device-flow
+  routes all 404 at the Nest layer rather than sitting there as
+  unreviewed surface area. See the Alternatives entry on the
+  `@All('/*splat')` wildcard this replaced.
 - **Signing key rotation is still unaddressed.** Where the key pair
   lives is settled (two plain files in `src/secrets/`), but not whether
   it's ever rotated — a new key pair issued while tokens signed with the
   old one are still valid needs multiple keys active in the JWKS at once
-  (`kid`-keyed), which a single `private.jwk.json` doesn't accommodate.
+  (`kid`-keyed), which a single `private.pem` doesn't accommodate.
   Carried from requirements.md's open questions.
 - **Real private key material living in the repo tree.** Committing
-  `src/secrets/private.jwk.json` as a literal file is the simplest thing
+  `src/secrets/private.pem` as a literal file is the simplest thing
   that works for a teaching reference implementation, but it means the
   private key either gets committed to git (bad habit to demonstrate,
   even for a demo key) or the path exists only locally/in deployment and
@@ -795,7 +1103,7 @@ Uncovered requirements: none.
 - **Key generation is out-of-band, not a runtime component.** The
   actual RS256 key pair has to be generated once, e.g. via the `jose`
   package's `generateKeyPair`/`exportJWK`, and the result written to
-  `src/secrets/{private,public}.jwk.json` — this is a setup script/ops
+  `src/secrets/{private,public}.pem` — this is a setup script/ops
   task, not application code, and isn't in the component breakdown
   above for that reason.
 - **Resolved (was the single biggest unknown): custom grant handler vs.
@@ -815,7 +1123,7 @@ Uncovered requirements: none.
   Server supported scope values"`). It has no way to validate against
   "whatever scopes happen to exist in the clients table." Worked around
   with a placeholder constant (`SUPPORTED_SCOPES = ['read', 'write']`,
-  `supportedScopes.constant.ts`) sufficient to unblock T16 — not a full
+  `oidc.constants.ts`) sufficient to unblock T16 — not a full
   fix. Two real gaps remain, deliberately not addressed to avoid scope
   creep beyond T16: (1) this list should probably be configurable rather
   than hardcoded; (2) REQ-1 (client creation) currently lets an admin set
@@ -855,7 +1163,7 @@ Uncovered requirements: none.
   it needs the *Grant* to know it was scoped to a resource
   (`grant.addResourceScope(DEFAULT_RESOURCE, requested)`) and the
   *RefreshToken instance itself* to carry that resource forward
-  (`resource: DEFAULT_RESOURCE` in its constructor properties) so a
+  (`resource: DEFAULT_RESOURCE_INDICATOR` in its constructor properties) so a
   later refresh can re-resolve `getResourceServerInfo` for it. Neither
   requirement is mentioned in anything fetched from the library's docs
   during design — both found by a failing e2e assertion, then confirmed

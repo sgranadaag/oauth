@@ -21,6 +21,11 @@ Token), endpoints, and setup.
   `oidc-provider`-specific gotchas already discovered the hard way.
   Check here before re-deriving something from library source or specs
   from scratch.
+- `src/modules/oidc/README.md` — a file-by-file walkthrough of the `oidc`
+  module: what each piece does, how a request flows through each grant,
+  and the library quirks that explain why the code looks the way it does.
+  Read it before changing anything in that module; it's the least
+  self-evident part of the codebase.
 - `.claude/rules/spec-workflow.md` — the spec-driven development
   contract for this repo, loaded automatically every session.
 

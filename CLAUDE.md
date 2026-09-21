@@ -1,54 +1,86 @@
 # oauth
 
-An RFC 6749 OAuth 2.0 authorization server, built from scratch on
-[NestJS](https://nestjs.com/) and
-[`oidc-provider`](https://github.com/panva/node-oidc-provider). It's one
-of the freely-replicable reference implementations on the user's GitHub
-profile (see the sibling `sgranadaag` repo) — meant to be read end to
-end, not just run. See `README.md` for the actual auth flows
-(Client Credentials, Resource Owner Password Credentials, Refresh
-Token), endpoints, and setup.
+Two applications that together do what "Sign in with Google" does, built
+from scratch so each piece can be read:
 
-## Working in this repo
+| Folder | What it is | Stack |
+| --- | --- | --- |
+| [auth-server/](auth-server/) | The server: issues tokens and stores the users | NestJS + MongoDB + Redis |
+| [auth-provider/](auth-provider/) | The login screen a person actually sees | Next.js |
 
-- `.claude/rules/architecture.md` — module structure and layering
-  conventions. **Read this before adding or moving any file** — the
-  current flat-per-module shape (no `domain/application/infrastructure`
-  split, no ports/tokens for use cases or repositories) is a settled
-  decision reached after two explicit reversals, not a starting point
-  to redesign again.
-- `.claude/rules/coding-standards.md` — naming, testing mechanics, and
-  `oidc-provider`-specific gotchas already discovered the hard way.
-  Check here before re-deriving something from library source or specs
-  from scratch.
-- `src/modules/oidc/README.md` — a file-by-file walkthrough of the `oidc`
-  module: what each piece does, how a request flows through each grant,
-  and the library quirks that explain why the code looks the way it does.
-  Read it before changing anything in that module; it's the least
-  self-evident part of the codebase.
-- `.claude/rules/spec-workflow.md` — the spec-driven development
-  contract for this repo, loaded automatically every session.
+**Each folder is its own project with its own `CLAUDE.md`.** Read the one
+for the folder you are working in before changing anything there — they do
+not share conventions, and the server additionally keeps its rules in
+`auth-server/.claude/rules/`. This file covers only what spans both.
 
-## Spec-driven development
+`auth-provider` is there to illustrate the flow, not to model a frontend:
+keep it small, and point at the `next-core` template for anything
+production-shaped.
 
-Feature specs live in `specs/<NNN>-<slug>/`, committed to git alongside
-the code they describe. Use the `/spec-new`, `/spec-design`,
-`/spec-tasks`, `/spec-implement`, `/spec-commit`, `/spec-release`, and
-`/spec-verify` skills to move a feature through the workflow phases —
-see `specs/README.md` and `.claude/rules/spec-workflow.md` for the full
-contract.
+## Who plays which role
 
-`/spec-implement` never commits on its own — it leaves every change
-unstaged so the diff can be reviewed first. `/spec-commit` is the
-separate, explicit step that stages and commits already-implemented,
-already-checked-off tasks once the user is ready. `/spec-release` is a
-further separate step, only ever run on explicit request, that promotes
-a committed feature branch through dev → qa → master and pushes all
-four branches — the highest-blast-radius action in this workflow.
+RFC 6749 names four roles. This repo collapses two of them on purpose:
 
-`specs/001-oauth2-authorization-server/` is this repo's own copy of the
-spec that produced everything under `src/` — its `design.md` is the
-authoritative record of *why* the code looks the way it does, including
-every architectural reversal along the way. Read it before assuming a
-pattern elsewhere (e.g. a hexagonal ports/adapters split, in a different
-project) belongs here too.
+| Role | Here |
+| --- | --- |
+| **Authorization Server** | `auth-server` — `POST /oauth/token` |
+| **Resource Server** | `auth-server` — the routes behind `BearerTokenGuard` |
+| **Resource Owner** | a person, stored as a user in `auth-server`'s `users` collection |
+| **Client** | `auth-provider` — it holds a `client_id` and `client_secret` |
+
+In a real deployment the authorization server and the identity provider
+are usually separate systems; **here they are the same process**, which is
+why the users and their passwords live in `auth-server` rather than
+somewhere behind it.
+
+The role assignment worth remembering: **`auth-provider` looks like a
+login provider to a person, but in OAuth terms it is a Client.** It is a
+confidential one — it has a secret and a server side to keep it on.
+
+The five diagrams in [docs/diagrams/](docs/diagrams/) show the roles per
+grant, including a proposal for `authorization_code`. Open the `.html`
+files; the `.json` beside each one is its source.
+
+## How the two talk
+
+```
+browser ──POST /api/login──► auth-provider (Next route handler)
+                                  │  Authorization: Basic client_id:client_secret
+                                  ▼
+                            POST /oauth/token   grant_type=password
+                                  │
+                            { access_token, refresh_token, ... }
+```
+
+Three properties hold that contract together, and a change on either side
+has to preserve all three:
+
+- **The client secret never reaches the browser.** It is read in
+  `auth-provider`'s route handler, server side. A browser cannot keep a
+  secret, which is the only reason that handler exists.
+- **The provider never forwards the server's error body.** The token
+  endpoint answers `invalid_grant` for an unknown email and for a wrong
+  password alike, and the provider keeps that indistinguishable.
+- **The refresh token stops at the route handler.** Only the access token,
+  its lifetime and its scope reach the page.
+
+## Running both
+
+`auth-server` on port 3000, `auth-provider` on 3001. The server has to be
+up first: the provider is useless without it, and the `client_id` and
+`client_secret` in `auth-provider/.env` are issued by the server. See
+[README.md](README.md) for the ordered walkthrough.
+
+## Conventions in this repo
+
+- **No development methodology is prescribed.** There is no spec workflow,
+  no phase gate and no required ceremony; this repo is about the OAuth
+  flows, not about how work gets planned.
+- **Both projects are deliberately light**: no tests, no linter, no
+  formatter, no Docker, no git hooks, no migrations. Don't reintroduce any
+  of them unless the user asks. The conventions in each project's rules
+  are read, not enforced by tooling.
+- Code, comments and user-facing copy are in English. Conversation with
+  the user is in Spanish.
+- Secrets are never committed. Each project keeps its own `.env`
+  (gitignored) and its own `.env.example` in sync.

@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import type { Provider } from 'oidc-provider';
-import { OidcController } from '@modules/oidc/oidc.controller';
+import { OidcController } from '../../modules/oidc/oidc.controller';
 
 describe('OidcController', () => {
   function buildController() {

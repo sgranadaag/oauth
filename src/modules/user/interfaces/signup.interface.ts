@@ -1,4 +1,4 @@
-import type { UserEntity } from '@modules/user/user.entity';
+import type { UserEntity } from '../user.entity';
 
 export interface SignupResult {
   user: UserEntity;

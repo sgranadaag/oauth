@@ -1,7 +1,7 @@
-import { ClientController } from '@modules/client/client.controller';
-import { ClientService } from '@modules/client/client.service';
-import { ClientEntity } from '@modules/client/client.entity';
-import { CreateClientDto } from '@modules/client/dto/createClient.dto';
+import { ClientController } from '../../modules/client/client.controller';
+import { ClientService } from '../../modules/client/client.service';
+import { ClientEntity } from '../../modules/client/client.entity';
+import { CreateClientDto } from '../../modules/client/dto/createClient.dto';
 
 describe('ClientController', () => {
   const PLAIN_SECRET = 'plain-secret-returned-once';

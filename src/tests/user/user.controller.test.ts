@@ -1,7 +1,7 @@
-import { UserController } from '@modules/user/user.controller';
-import { UserService } from '@modules/user/user.service';
-import { UserEntity } from '@modules/user/user.entity';
-import { SignupDto } from '@modules/user/dto/signup.dto';
+import { UserController } from '../../modules/user/user.controller';
+import { UserService } from '../../modules/user/user.service';
+import { UserEntity } from '../../modules/user/user.entity';
+import { SignupDto } from '../../modules/user/dto/signup.dto';
 import type { BasicTokenRequest } from '@interfaces/authenticatedRequest.interface';
 
 describe('UserController', () => {

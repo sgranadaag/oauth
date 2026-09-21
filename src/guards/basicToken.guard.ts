@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { BasicTokenRequest } from '@interfaces/authenticatedRequest.interface';
-import { ClientRepository } from '@modules/client/client.repository';
+import { ClientRepository } from '../modules/client/client.repository';
 
 // Constant-time, so a caller cannot narrow the secret one character at a time by
 // measuring response latency. timingSafeEqual throws on differing lengths, hence

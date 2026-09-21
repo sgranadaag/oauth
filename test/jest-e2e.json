@@ -10,6 +10,7 @@
   },
   "moduleNameMapper": {
     "^@modules/(.*)$": "<rootDir>/../src/modules/$1",
+    "^@sharedModules/(.*)$": "<rootDir>/../src/sharedModules/$1",
     "^@decorators/(.*)$": "<rootDir>/../src/decorators/$1",
     "^@guards/(.*)$": "<rootDir>/../src/guards/$1",
     "^@middlewares/(.*)$": "<rootDir>/../src/middlewares/$1",

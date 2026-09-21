@@ -1,38 +1,20 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { KoaContextWithOIDC } from 'oidc-provider';
-import { UserRepository } from '@modules/user/user.repository';
-import { ClientRepository } from '@modules/client/client.repository';
-import { UserEntity } from '@modules/user/user.entity';
-import {
-  DEFAULT_RESOURCE_INDICATOR,
-  OIDC_ERRORS,
-  PASSWORD_GRANT_TYPE,
-} from '@modules/oidc/oidc.constants';
-import type { GrantHandler, OidcErrors } from '@modules/oidc/oidc.interfaces';
-import { SIGNING_ALGORITHM } from '@utils/keys.util';
+import type { OidcClient } from '@interfaces/oidcClient.interface';
+import { UserRepository } from '../../user/user.repository';
+import { UserEntity } from '../../user/user.entity';
+import { TokenService } from '../../token/token.service';
+import { OIDC_ERRORS, PASSWORD_GRANT_TYPE } from '../oidc.constants';
+import type { GrantHandler } from '../interfaces/grant.interface';
+import type { OidcErrors } from '../interfaces/errors.interface';
+import type { PasswordGrantParams } from '../interfaces/passwordGrant.interface';
 import { verifyPassword } from '@utils/password.util';
-
-type OidcClient = NonNullable<KoaContextWithOIDC['oidc']['client']>;
-
-interface PasswordGrantParams {
-  username?: string;
-  password?: string;
-  scope?: string;
-}
-
-interface TokenBuildInput {
-  context: KoaContextWithOIDC;
-  client: OidcClient;
-  user: UserEntity;
-  scopes: string[];
-  grantId: string;
-}
 
 @Injectable()
 export class PasswordGrantService implements GrantHandler {
   constructor(
     private readonly userRepository: UserRepository,
-    private readonly clientRepository: ClientRepository,
+    private readonly tokenService: TokenService,
     @Inject(OIDC_ERRORS) private readonly errors: OidcErrors,
   ) { }
 
@@ -41,20 +23,14 @@ export class PasswordGrantService implements GrantHandler {
     const params = context.oidc.params as PasswordGrantParams;
 
     const user = await this.authenticateUser(client, params);
-    const scopes = await this.resolveScopes(user, params.scope);
-    const grantId = await this.buildGrant({ context, client, user, scopes });
 
-    const input: TokenBuildInput = { context, client, user, scopes, grantId };
-    const accessToken = this.buildAccessToken(input);
-    const refreshToken = this.buildRefreshToken(input);
-
-    context.body = {
-      access_token: await accessToken.save(),
-      refresh_token: await refreshToken.save(),
-      expires_in: accessToken.expiration,
-      token_type: 'Bearer',
-      scope: scopes.join(' '),
-    };
+    context.body = await this.tokenService.issue({
+      context,
+      client,
+      user,
+      grantType: PASSWORD_GRANT_TYPE,
+      requestedScope: params.scope,
+    });
   }
 
   private async authenticateUser(
@@ -62,7 +38,7 @@ export class PasswordGrantService implements GrantHandler {
     { username, password }: PasswordGrantParams,
   ): Promise<UserEntity> {
     const user = username
-      ? await this.userRepository.findByClientAndUsername(
+      ? await this.userRepository.findByClientAndEmail(
         client.clientId,
         username,
       )
@@ -77,98 +53,5 @@ export class PasswordGrantService implements GrantHandler {
     }
 
     return user;
-  }
-
-  private async resolveScopes(
-    user: UserEntity,
-    requestedScope?: string,
-  ): Promise<string[]> {
-    const client = await this.clientRepository.findByClientId(user.clientId);
-    const allowedScopes = client!.allowedScopes;
-
-    const requested = requestedScope
-      ? requestedScope.split(' ').filter(Boolean)
-      : allowedScopes;
-
-    const disallowed = requested.filter(
-      (scope) => !allowedScopes.includes(scope),
-    );
-    if (disallowed.length > 0) {
-      throw new this.errors.InvalidScope(
-        'scope exceeds what is allowed for this client',
-        disallowed.join(' '),
-      );
-    }
-
-    return requested;
-  }
-
-  private async buildGrant({
-    context,
-    client,
-    user,
-    scopes,
-  }: Omit<TokenBuildInput, 'grantId'>): Promise<string> {
-    const grant = new context.oidc.provider.Grant({
-      accountId: user.id,
-      clientId: client.clientId,
-    });
-
-    grant.addOIDCScope(scopes);
-    grant.addResourceScope(DEFAULT_RESOURCE_INDICATOR, scopes);
-    const grantId = await grant.save();
-    context.oidc.entity('Grant', grant);
-
-    return grantId;
-  }
-
-  private buildAccessToken({
-    context,
-    client,
-    user,
-    scopes,
-    grantId,
-  }: TokenBuildInput) {
-    const grantedScope = scopes.join(' ');
-    const resourceServer = new context.oidc.provider.ResourceServer(
-      DEFAULT_RESOURCE_INDICATOR,
-      {
-        scope: grantedScope,
-        accessTokenFormat: 'jwt',
-        jwt: { sign: { alg: SIGNING_ALGORITHM } },
-      },
-    );
-
-    const accessToken = new context.oidc.provider.AccessToken({
-      accountId: user.id,
-      client,
-      grantId,
-      gty: PASSWORD_GRANT_TYPE,
-      scope: grantedScope,
-      resourceServer,
-    });
-    context.oidc.entity('AccessToken', accessToken);
-
-    return accessToken;
-  }
-
-  private buildRefreshToken({
-    context,
-    client,
-    user,
-    scopes,
-    grantId,
-  }: TokenBuildInput) {
-    const refreshToken = new context.oidc.provider.RefreshToken({
-      accountId: user.id,
-      client,
-      grantId,
-      gty: PASSWORD_GRANT_TYPE,
-      scope: scopes.join(' '),
-      resource: DEFAULT_RESOURCE_INDICATOR,
-    });
-    context.oidc.entity('RefreshToken', refreshToken);
-
-    return refreshToken;
   }
 }

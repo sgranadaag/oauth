@@ -17,11 +17,11 @@ import type {
   BasicTokenRequest,
   BearerTokenRequest,
 } from '@interfaces/authenticatedRequest.interface';
-import { UserService } from '@modules/user/user.service';
-import { USER_SWAGGER } from '@modules/user/user.swagger';
-import { SignupDto } from '@modules/user/dto/signup.dto';
-import { ChangePasswordDto } from '@modules/user/dto/changePassword.dto';
-import { UserResponseDto } from '@modules/user/dto/userResponse.dto';
+import { UserService } from './user.service';
+import { USER_SWAGGER } from './user.swagger';
+import { SignupDto } from './dto/signup.dto';
+import { ChangePasswordDto } from './dto/changePassword.dto';
+import { UserResponseDto } from './dto/userResponse.dto';
 
 @ApiTags(USER_SWAGGER.API_TAG)
 @Controller('users')
@@ -37,7 +37,7 @@ export class UserController {
   ): Promise<UserResponseDto> {
     const { user, allowedScopes } = await this.userService.signup(
       request.clientId,
-      dto.username,
+      dto.email,
       dto.password,
     );
     return UserResponseDto.fromEntity(user, allowedScopes);

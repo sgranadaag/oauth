@@ -1,9 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { UserService } from '@modules/user/user.service';
-import { UserRepository } from '@modules/user/user.repository';
-import { UserEntity } from '@modules/user/user.entity';
-import { ClientRepository } from '@modules/client/client.repository';
-import { ClientEntity } from '@modules/client/client.entity';
+import { UserService } from '../../modules/user/user.service';
+import { UserRepository } from '../../modules/user/user.repository';
+import { UserEntity } from '../../modules/user/user.entity';
+import { ClientRepository } from '../../modules/client/client.repository';
+import { ClientEntity } from '../../modules/client/client.entity';
 
 describe('UserService', () => {
   function buildClient(): ClientEntity {

@@ -4,15 +4,17 @@ import { ModuleRef } from '@nestjs/core';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { errors } from 'oidc-provider';
-import { ClientModule } from '@modules/client/client.module';
-import { ClientRepository } from '@modules/client/client.repository';
-import { UserModule } from '@modules/user/user.module';
-import { UserRepository } from '@modules/user/user.repository';
-import { OidcController } from '@modules/oidc/oidc.controller';
-import { OidcModelEntity } from '@modules/oidc/oidc.entity';
-import { OidcProvider } from '@modules/oidc/oidc.provider';
-import { CUSTOM_GRANT_TYPES } from '@modules/oidc/grantTypes/grantTypes.registry';
-import { OIDC_ERRORS, OIDC_PROVIDER } from '@modules/oidc/oidc.constants';
+import { ClientModule } from '../client/client.module';
+import { ClientRepository } from '../client/client.repository';
+import { OtpModule } from '../otp/otp.module';
+import { TokenModule } from '../token/token.module';
+import { UserModule } from '../user/user.module';
+import { UserRepository } from '../user/user.repository';
+import { OidcController } from './oidc.controller';
+import { OidcModelEntity } from './oidc.entity';
+import { OidcProvider } from './oidc.provider';
+import { CUSTOM_GRANT_TYPES } from './grantTypes/grantTypes.registry';
+import { OIDC_ERRORS, OIDC_PROVIDER } from './oidc.constants';
 
 // Every custom grant service becomes a provider, so ModuleRef can resolve it
 // below. Derived from the registry rather than listed by hand — adding a grant
@@ -24,6 +26,8 @@ const grantTypeProviders = CUSTOM_GRANT_TYPES.map((grant) => grant.service);
     TypeOrmModule.forFeature([OidcModelEntity]),
     ClientModule,
     UserModule,
+    OtpModule,
+    TokenModule,
   ],
   controllers: [OidcController],
   providers: [

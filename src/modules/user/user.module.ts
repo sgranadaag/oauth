@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ClientModule } from '@modules/client/client.module';
+import { ClientModule } from '../client/client.module';
 import { BasicTokenGuard } from '@guards/basicToken.guard';
-import { UserEntity } from '@modules/user/user.entity';
-import { UserController } from '@modules/user/user.controller';
-import { UserRepository } from '@modules/user/user.repository';
-import { UserService } from '@modules/user/user.service';
+import { UserEntity } from './user.entity';
+import { UserController } from './user.controller';
+import { UserRepository } from './user.repository';
+import { UserService } from './user.service';
 
 @Module({
   imports: [ClientModule, TypeOrmModule.forFeature([UserEntity])],

@@ -11,7 +11,7 @@ import { verifyAccessToken } from '@utils/jwt.util';
 import {
   DEFAULT_OIDC_ISSUER,
   DEFAULT_RESOURCE_INDICATOR,
-} from '@modules/oidc/oidc.constants';
+} from '../modules/oidc/oidc.constants';
 
 @Injectable()
 export class BearerTokenGuard implements CanActivate {

@@ -15,11 +15,13 @@ export const OIDC_SWAGGER = {
     operation: {
       summary: 'Token endpoint (all grants)',
       description:
-        'RFC 6749 §3.2. One endpoint serves all three grants; which body ' +
+        'RFC 6749 §3.2. One endpoint serves all four grants; which body ' +
         'fields apply depends on `grant_type`:\n\n' +
         '- **client_credentials** — no extra fields. Returns an access token ' +
         'and no refresh token.\n' +
         '- **password** — `username` and `password` required.\n' +
+        '- **otp** — `email` and `otp` required. The code is single-use: a ' +
+        'successful exchange spends it.\n' +
         '- **refresh_token** — `refresh_token` required. The presented token ' +
         'is consumed and a new one issued (rotation).\n\n' +
         '`scope` is optional everywhere: omit it to receive the client full ' +
@@ -36,18 +38,30 @@ export const OIDC_SWAGGER = {
         properties: {
           grant_type: {
             type: 'string' as const,
-            enum: ['client_credentials', 'password', 'refresh_token'],
+            enum: ['client_credentials', 'password', 'otp', 'refresh_token'],
             example: 'password',
           },
           username: {
             type: 'string' as const,
-            description: 'Required for `grant_type=password`.',
-            example: 'alice',
+            description:
+              'Required for `grant_type=password`: the user email, under the ' +
+              'RFC 6749 parameter name.',
+            example: 'alice@example.com',
           },
           password: {
             type: 'string' as const,
             description: 'Required for `grant_type=password`.',
             example: 'correct-horse-battery-staple',
+          },
+          email: {
+            type: 'string' as const,
+            description: 'Required for `grant_type=otp`.',
+            example: 'alice@example.com',
+          },
+          otp: {
+            type: 'string' as const,
+            description: 'Required for `grant_type=otp`.',
+            example: '048213',
           },
           refresh_token: {
             type: 'string' as const,

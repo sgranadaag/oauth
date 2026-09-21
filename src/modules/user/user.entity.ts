@@ -7,10 +7,10 @@ import {
   PrimaryColumn,
   Unique,
 } from 'typeorm';
-import { ClientEntity } from '@modules/client/client.entity';
+import { ClientEntity } from '../client/client.entity';
 
 @Entity('users')
-@Unique(['clientId', 'username'])
+@Unique(['clientId', 'email'])
 export class UserEntity {
   @PrimaryColumn()
   id: string;
@@ -19,7 +19,7 @@ export class UserEntity {
   clientId: string;
 
   @Column()
-  username: string;
+  email: string;
 
   @Column()
   passwordHash: string;

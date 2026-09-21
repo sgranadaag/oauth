@@ -3,9 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { postgresConfig } from '@config/postgres.config';
 import { RequestLoggerMiddleware } from '@middlewares/requestLogger.middleware';
-import { ClientModule } from '@modules/client/client.module';
-import { UserModule } from '@modules/user/user.module';
-import { OidcModule } from '@modules/oidc/oidc.module';
+import { ClientModule } from './modules/client/client.module';
+import { UserModule } from './modules/user/user.module';
+import { OidcModule } from './modules/oidc/oidc.module';
 
 @Module({
   imports: [

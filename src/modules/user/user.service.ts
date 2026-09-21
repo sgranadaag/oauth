@@ -7,10 +7,10 @@ import {
 } from '@nestjs/common';
 import type { AccessTokenClaims } from '@interfaces/accessToken.interface';
 import { hashPassword, verifyPassword } from '@utils/password.util';
-import { ClientRepository } from '@modules/client/client.repository';
-import { UserEntity } from '@modules/user/user.entity';
-import { UserRepository } from '@modules/user/user.repository';
-import type { SignupResult } from '@modules/user/user.interfaces';
+import { ClientRepository } from '../client/client.repository';
+import { UserEntity } from './user.entity';
+import { UserRepository } from './user.repository';
+import type { SignupResult } from './interfaces/signup.interface';
 
 @Injectable()
 export class UserService {
@@ -21,7 +21,7 @@ export class UserService {
 
   async signup(
     clientId: string,
-    username: string,
+    email: string,
     password: string,
   ): Promise<SignupResult> {
     const client = await this.clientRepository.findByClientId(clientId);
@@ -29,20 +29,20 @@ export class UserService {
       throw new NotFoundException(`Client ${clientId} not found`);
     }
 
-    const existing = await this.userRepository.findByClientAndUsername(
+    const existing = await this.userRepository.findByClientAndEmail(
       clientId,
-      username,
+      email,
     );
     if (existing) {
       throw new ConflictException(
-        `Username ${username} is already registered under this client`,
+        `Email ${email} is already registered under this client`,
       );
     }
 
     const user = new UserEntity();
     user.id = randomUUID();
     user.clientId = clientId;
-    user.username = username;
+    user.email = email;
     user.passwordHash = await hashPassword(password);
 
     const saved = await this.userRepository.save(user);

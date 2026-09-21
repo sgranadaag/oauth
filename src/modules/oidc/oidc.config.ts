@@ -1,14 +1,14 @@
 import type { Configuration } from 'oidc-provider';
 import { ENV } from '@constants/environment.constant';
-import type { OidcProviderDependencies } from '@modules/oidc/oidc.interfaces';
+import type { OidcProviderDependencies } from './interfaces/provider.interface';
 import { SIGNING_ALGORITHM, getSigningJwks } from '@utils/keys.util';
-import { OidcAdapter } from '@modules/oidc/oidc.adapter';
+import { OidcAdapter } from './oidc.adapter';
 import {
   DEFAULT_OIDC_ISSUER,
   DEFAULT_RESOURCE_INDICATOR,
   OFFLINE_ACCESS_SCOPE,
   SUPPORTED_SCOPES,
-} from '@modules/oidc/oidc.constants';
+} from './oidc.constants';
 
 export function oidcIssuer({
   configService,

@@ -1,11 +1,11 @@
 import * as bcrypt from 'bcryptjs';
 import type { KoaContextWithOIDC } from 'oidc-provider';
-import { PasswordGrantService } from '@modules/oidc/grantTypes/passwordGrant.service';
-import type { OidcErrors } from '@modules/oidc/oidc.interfaces';
-import { UserRepository } from '@modules/user/user.repository';
-import { UserEntity } from '@modules/user/user.entity';
-import { ClientRepository } from '@modules/client/client.repository';
-import { ClientEntity } from '@modules/client/client.entity';
+import { PasswordGrantService } from '../../../modules/oidc/grantTypes/passwordGrant.service';
+import type { OidcErrors } from '../../../modules/oidc/interfaces/errors.interface';
+import { UserRepository } from '../../../modules/user/user.repository';
+import { UserEntity } from '../../../modules/user/user.entity';
+import { ClientRepository } from '../../../modules/client/client.repository';
+import { ClientEntity } from '../../../modules/client/client.entity';
 
 class StubInvalidGrant extends Error {}
 class StubInvalidScope extends Error {}

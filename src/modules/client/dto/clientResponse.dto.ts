@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ClientEntity } from '@modules/client/client.entity';
-import { CLIENT_PROPERTY_SWAGGER } from '@modules/client/client.swagger';
+import { ClientEntity } from '../client.entity';
+import { CLIENT_PROPERTY_SWAGGER } from '../client.swagger';
 
 export class ClientResponseDto {
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.CLIENT_ID)

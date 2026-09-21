@@ -1,6 +1,6 @@
-import { ClientService } from '@modules/client/client.service';
-import { ClientRepository } from '@modules/client/client.repository';
-import { ClientEntity } from '@modules/client/client.entity';
+import { ClientService } from '../../modules/client/client.service';
+import { ClientRepository } from '../../modules/client/client.repository';
+import { ClientEntity } from '../../modules/client/client.entity';
 
 describe('ClientService', () => {
   function buildService() {

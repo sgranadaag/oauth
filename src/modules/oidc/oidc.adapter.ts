@@ -1,6 +1,7 @@
 import type { Repository } from 'typeorm';
-import { ClientRepository } from '@modules/client/client.repository';
-import { OidcModelEntity } from '@modules/oidc/oidc.entity';
+import { ClientRepository } from '../client/client.repository';
+import { OidcModelEntity } from './oidc.entity';
+import { CLIENT_GRANT_TYPES } from './oidc.constants';
 
 export class OidcAdapter {
   constructor(
@@ -38,7 +39,7 @@ export class OidcAdapter {
       return {
         client_id: client.id,
         client_secret: client.clientSecret,
-        grant_types: ['client_credentials', 'password', 'refresh_token'],
+        grant_types: [...CLIENT_GRANT_TYPES],
         redirect_uris: [],
         response_types: [],
         scope: client.allowedScopes.join(' '),

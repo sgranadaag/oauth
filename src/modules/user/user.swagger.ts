@@ -12,13 +12,15 @@ export const USER_SWAGGER = {
         'the request body — a caller can only create users under a client ' +
         'whose secret it holds. The new user inherits that client allowedScopes.\n\n' +
         'Logging that user in afterwards is `POST /oauth/token` with ' +
-        '`grant_type=password`; there is no separate login endpoint here.',
+        '`grant_type=password`, the email going in `username`; there is no ' +
+        'separate login endpoint here.',
     },
     security: CLIENT_BASIC_SECURITY,
     responses: {
       201: { description: 'User created.' },
+      400: { description: 'The email is not a valid address.' },
       401: { description: 'Missing, malformed or invalid client credentials.' },
-      409: { description: 'That username already exists under this client.' },
+      409: { description: 'That email already exists under this client.' },
     },
   },
 
@@ -77,11 +79,11 @@ export const USER_SWAGGER = {
 } as const;
 
 export const USER_PROPERTY_SWAGGER = {
-  USERNAME: {
+  EMAIL: {
     description:
-      'Unique per client, not globally — the same username may exist under a ' +
+      'Unique per client, not globally — the same email may exist under a ' +
       'different client as an unrelated account.',
-    example: 'alice',
+    example: 'alice@example.com',
   },
   PASSWORD: {
     description: 'Stored bcrypt-hashed; never returned by any endpoint.',

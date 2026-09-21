@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ClientEntity } from '@modules/client/client.entity';
-import { ClientRepository } from '@modules/client/client.repository';
-import type { CreateClientResult } from '@modules/client/client.interfaces';
+import { ClientEntity } from './client.entity';
+import { ClientRepository } from './client.repository';
+import type { CreateClientResult } from './interfaces/createClient.interface';
 
 @Injectable()
 export class ClientService {

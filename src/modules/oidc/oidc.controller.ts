@@ -3,8 +3,8 @@ import { ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { Provider } from 'oidc-provider';
 import { SwaggerDocs } from '@decorators/swaggerDocs.decorator';
-import { OIDC_MOUNT_PATH, OIDC_PROVIDER } from '@modules/oidc/oidc.constants';
-import { OIDC_SWAGGER } from '@modules/oidc/oidc.swagger';
+import { OIDC_MOUNT_PATH, OIDC_PROVIDER } from './oidc.constants';
+import { OIDC_SWAGGER } from './oidc.swagger';
 
 @ApiTags(OIDC_SWAGGER.API_TAG)
 @Controller('oauth')

@@ -15,3 +15,18 @@ export const OFFLINE_ACCESS_SCOPE = 'offline_access';
 export const PASSWORD_GRANT_TYPE = 'password';
 
 export const PASSWORD_GRANT_PARAMS = ['username', 'password', 'scope'];
+
+export const OTP_GRANT_TYPE = 'otp';
+
+export const OTP_GRANT_PARAMS = ['email', 'otp', 'scope'];
+
+// What every client is registered as allowed to use: the two grants
+// `oidc-provider` implements natively, plus the custom ones in
+// grantTypes.registry.ts. A grant missing here is `unauthorized_client` at the
+// token endpoint, however correctly it is registered.
+export const CLIENT_GRANT_TYPES = [
+  'client_credentials',
+  'refresh_token',
+  PASSWORD_GRANT_TYPE,
+  OTP_GRANT_TYPE,
+];

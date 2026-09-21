@@ -6,10 +6,10 @@ export class CreateUsers1788140207580 implements MigrationInterface {
       CREATE TABLE "users" (
         "id" uuid PRIMARY KEY,
         "clientId" uuid NOT NULL REFERENCES "clients"("id"),
-        "username" varchar NOT NULL,
+        "email" varchar NOT NULL,
         "passwordHash" varchar NOT NULL,
         "createdAt" timestamptz NOT NULL DEFAULT now(),
-        CONSTRAINT "UQ_users_clientId_username" UNIQUE ("clientId", "username")
+        CONSTRAINT "UQ_users_clientId_email" UNIQUE ("clientId", "email")
       )
     `);
   }

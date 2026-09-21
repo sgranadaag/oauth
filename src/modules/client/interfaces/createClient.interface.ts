@@ -1,4 +1,4 @@
-import type { ClientEntity } from '@modules/client/client.entity';
+import type { ClientEntity } from '../client.entity';
 
 export interface CreateClientResult {
   client: ClientEntity;

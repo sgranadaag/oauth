@@ -17,7 +17,9 @@ either of those patterns without the user explicitly asking for it.
 
 Every feature module lives flat under `src/modules/<name>/` — singular
 folder name, **no** `domain/`, `application/`, or `infrastructure/`
-subfolders:
+subfolders. `src/modules/` is for the domain only; a module that is
+plumbing rather than a business concept goes in `src/sharedModules/`
+instead (see Shared modules below), with the same internal shape:
 
 ```
 src/modules/client/
@@ -26,36 +28,80 @@ src/modules/client/
   client.service.ts       # one class per module, one method per action
   client.controller.ts
   client.module.ts
-  client.interfaces.ts    # every interface this module owns
   client.swagger.ts       # CLIENT_SWAGGER + CLIENT_PROPERTY_SWAGGER
+  interfaces/
+    createClient.interface.ts
   dto/
     createClient.dto.ts
     clientResponse.dto.ts
 ```
 
-**A module owns its own interfaces and constants**, in
-`<name>.interfaces.ts` and `<name>.constants.ts` at the module root.
-Create either file only when there is something to put in it
-(`client.interfaces.ts` holds `CreateClientResult`; `oidc.constants.ts`
-holds every symbol, scope and default that module defines).
+**A module owns its own interfaces and constants.** Constants go in one
+`<name>.constants.ts` at the module root; interfaces go in an
+`interfaces/` folder, **never in a single collected
+`<name>.interfaces.ts`** — that file shape is gone. Create either only
+when there is something to put in it (`oidc.constants.ts` holds every
+symbol, scope and default that module defines).
 
-**`src/interfaces/` is for common types only** — the ones no single
-module owns because several layers must agree on them. One file per
-subject, named `<subject>.interface.ts` (singular, to distinguish it
-from a module's collected `.interfaces.ts`). Today:
+**Every interface and type a module needs lives in
+`<module>/interfaces/`, split by responsibility** — one file per
+subject, named `<subject>.interface.ts` (singular, matching
+`src/interfaces/`), holding the types that belong to that subject. The
+oidc module has four: `grant.interface.ts` (`OidcClient`,
+`GrantHandler`, `GrantTypeRegistration`, `GrantHandlerResolver`),
+`passwordGrant.interface.ts` (`PasswordGrantParams`, `TokenBuildInput`),
+`provider.interface.ts` (`OidcProviderDependencies`) and
+`errors.interface.ts` (`OidcErrors`).
 
-- `authenticatedRequest.interface.ts` — `BasicTokenRequest`,
-  `BearerTokenRequest`: written by the guards, read by controllers.
-- `accessToken.interface.ts` — `AccessTokenClaims` and its sign/verify
-  options: produced by `@utils/jwt.util`, consumed by a guard.
+This holds **even for a type used by exactly one file**: a grant's own
+param and token-building shapes are declared in `interfaces/` and
+imported, not left local to the service. The split is by subject, not by
+consumer count — when a new subject appears, add a file rather than
+growing an existing one past what its name covers.
 
-Infrastructure-shaped contracts (database setup, transport config, and
-similar) belong here too as they appear.
+**`src/interfaces/` is for the app's general, cross-cutting contracts**
+— how the application is wired and documented, never what it does for a
+user. Same file naming as a module's own folder
+(`<subject>.interface.ts`), so only the location says who owns the type.
+Three kinds live here:
 
-The test: **is this type owned by one module, or does it exist so
-separate layers can agree?** Owned → the module's own
-`<name>.interfaces.ts`. Shared → `src/interfaces/`. A type used by
-exactly one file needs neither — leave it in that file.
+- **General configuration and documentation shapes** —
+  `swaggerDocs.interface.ts` (`SwaggerEndpointSchema`), the contract the
+  `@SwaggerDocs` decorator and *every* module's `<module>.swagger.ts`
+  have to agree on. Transport, database and similar setup contracts
+  belong here too as they appear.
+- **Guard contracts** — `authenticatedRequest.interface.ts`
+  (`BasicTokenRequest`, `BearerTokenRequest`): what a guard writes onto
+  the request and a controller reads back off it. A guard is a layer, not
+  a module, so its types cannot live in a module's folder.
+- **Error shapes**, once an app-wide one exists — the contract every
+  layer formats or catches errors with. Note what does *not* qualify:
+  `OidcErrors` is `oidc-provider`'s own error classes, raised only by
+  the oidc module's grant code, so it stays in that module's
+  `interfaces/errors.interface.ts`. A third-party library's errors are
+  that module's business; a shape this app defines for itself is
+  everyone's.
+
+Plus `accessToken.interface.ts` (`AccessTokenClaims` and its sign/verify
+options), which is the same case as the guards: produced by
+`@utils/jwt.util`, consumed by `BearerTokenGuard` — two layers, no
+module.
+
+**Everything a module owns goes in that module instead**: the result of
+a service method (`SignupResult`, `CreateClientResult`), a grant's
+params and token-building shapes, a provider's dependency bag. These
+describe this server's behaviour, and each has exactly one owner.
+
+The test, in order:
+1. **Is it about wiring, documenting or guarding the app, rather than
+   about a business concept?** → `src/interfaces/`.
+2. **Otherwise, which module owns it?** → that module's
+   `interfaces/<subject>.interface.ts`.
+
+There is no third answer: a type is never left declared inside the file
+that happens to use it. When a type is used by two modules and belongs
+to neither, that is the signal it is infrastructure — and that it
+belongs in `src/interfaces/`.
 
 Group a module's constants and DI tokens in **one** `<name>.constants.ts`
 rather than a file per value. `oidc.constants.ts` holds the
@@ -66,8 +112,8 @@ type/params — all of which were previously scattered across four files or
 duplicated as literals in two.
 
 Subfolders inside a module are for **open-ended sets of one
-responsibility**, not for layering. Two exist today: `dto/`, and
-`grantTypes/` in the oidc module. Don't add one to separate "the service
+responsibility**, not for layering. Three exist today: `interfaces/`,
+`dto/`, and `grantTypes/` in the oidc module. Don't add one to separate "the service
 layer" from "the repository layer" — that's the split this architecture
 deliberately removed.
 
@@ -101,12 +147,13 @@ deliberately removed.
   (`ClientService.create(...)`, and any future ones on the same class)
   — not a fresh `execute()`-only class (and inbound port) per action.
   Controllers inject the concrete service class directly.
-- **DTOs are the one thing still pulled into their own subfolder**
-  (`dto/`) — kept apart from the entity/repository/service/controller
-  files sitting next to them, even though everything else is flat.
+- **DTOs and interfaces are the two things pulled into their own
+  subfolders** (`dto/`, `interfaces/`) — kept apart from the
+  entity/repository/service/controller files sitting next to them, even
+  though everything else is flat.
 - **Custom OAuth grants live in `src/modules/oidc/grantTypes/`**, one
-  `<name>Grant.service.ts` per grant (`passwordGrant.service.ts` today; an
-  OTP grant would be `otpGrant.service.ts`). Each is an `@Injectable()`
+  `<name>Grant.service.ts` per grant (`passwordGrant.service.ts` and
+  `otpGrant.service.ts` today). Each is an `@Injectable()`
   implementing `GrantHandler` — a single `handle(context)` method — and
   its unit test mirrors the path in `src/tests/oidc/grantTypes/`. Grants
   `oidc-provider` implements natively (client_credentials,
@@ -127,12 +174,25 @@ deliberately removed.
   cycle — and both sides are read at class-decoration time, so it would
   resolve to `undefined` at boot rather than failing loudly.
 
-- **A grant service separates its steps and lets `handle()` orchestrate.**
-  `handle()` reads the params and then calls one named method per stage —
-  `authenticateUser`, `resolveScopes`, `buildGrant`, `buildAccessToken`,
-  `buildRefreshToken`, `buildResponse` — passing a `TokenBuildInput` bag
-  once the shared state exists. Keep `handle()` free of business logic so
-  the sequence is readable at a glance.
+- **A grant service owns only what makes its grant different: how the
+  user proves who they are.** `handle()` reads the params, calls its own
+  `authenticateUser(client, params)` — which throws `InvalidGrant` when
+  the proof fails — and hands the user to `TokenService.issue(...)` for
+  the response body. **Authentication stays in the grant**, with
+  whatever it needs injected directly (`UserRepository` and
+  `verifyPassword` for password, plus `OtpRepository` for otp); it is
+  not delegated to `UserService`. A grant that grows a
+  `buildAccessToken` of its own, on the other hand, is a grant
+  reimplementing the token module.
+- **Issuing tokens is `TokenModule`'s job, never a grant's**
+  (`src/modules/token/`). `TokenService.issue({ context, client, user,
+  grantType, requestedScope })` resolves the scopes against the client's
+  `allowedScopes`, creates the `Grant`, the access token and the refresh
+  token, and returns the RFC 6749 §5.1 body — every grant gets the same
+  `gty`, resource-indicator and JWT wiring for free, which is what stops
+  the quirks in coding-standards from drifting between grants. Native
+  grants (client_credentials, refresh_token) never reach it: the library
+  issues those itself.
 - **Guards never live inside a module** — every guard belongs to the
   top-level `src/guards/` layer, including ones that depend on a
   module's repository. See Cross-cutting code below for how their DI
@@ -170,6 +230,32 @@ that same file, so the half-initialised module would leave
 `@ApiProperty` reading `undefined` at class-decoration time, at boot,
 with no useful stack. Handlers with no response body (a 204) take one
 argument.
+
+## Shared modules
+
+`src/sharedModules/<name>/` holds the Nest modules that are **not part
+of the domain**: stateless infrastructure a feature module imports —
+a connection, a transport, a client for something external. They own no
+entity, no business rule, and no state of their own; whatever they hold
+belongs to the caller.
+
+The test: **would this module still make sense, unchanged, in a product
+that has nothing to do with OAuth?** Yes → `src/sharedModules/`. It
+names a concept this server owns (client, user, oidc) → `src/modules/`.
+
+One exists today:
+
+- `redis/` — `RedisModule`, which builds the single Redis connection and
+  exports it under the `REDIS_CLIENT` symbol
+  (`redis.constants.ts`), then closes it on shutdown. It decides
+  nothing about what is stored: **the module that owns the data writes
+  its own repository over that client**, in its own module, exactly as
+  it would over a TypeORM repository.
+
+Their construction config still lives in `src/config/` with everything
+else's (`redisConfig` beside `postgresConfig` and `oidcConfig`) — a
+shared module is where the wiring lives, not where the settings are
+decided. Import them through the `@sharedModules/*` alias.
 
 ## What this does *not* apply to
 
@@ -260,8 +346,9 @@ by *kind*, not lumped into one general-purpose `common/` folder:
 - `src/constants/` — env-var *names* only (`environment.constant.ts`).
   Anything a module owns goes in that module's own `<name>.constants.ts`
   instead.
-- `src/interfaces/` — the common types described under Module shape
-  above. These layers do **not** keep their own interface files; a type
+- `src/interfaces/` — the general configuration, guard and error
+  contracts described under Module shape above. These layers do **not**
+  keep their own interface files; a type
   a guard and a util both need is shared by definition, so it goes here.
   `swaggerDocs.interface.ts` lives here for the same reason: the
   decorator layer and every module's `<module>.swagger.ts` have to agree
@@ -269,7 +356,7 @@ by *kind*, not lumped into one general-purpose `common/` folder:
 
 Each is a flat, purpose-named folder with its own path alias
 (`@decorators/*`, `@guards/*`, `@middlewares/*`, `@utils/*`,
-`@config/*`, `@constants/*`, `@interfaces/*` in `tsconfig.json`,
+`@config/*`, `@constants/*`, `@interfaces/*`, `@sharedModules/*` in `tsconfig.json`,
 mirrored in `package.json`'s and `test/jest-e2e.json`'s Jest
 `moduleNameMapper`) — use those aliases (and `@modules/*`, `@tests/*`)
 for all imports, no relative `../../..` climbing across a module

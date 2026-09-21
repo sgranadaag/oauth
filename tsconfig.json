@@ -15,7 +15,8 @@
     "outDir": "./dist",
     "types": ["node", "jest"],
     "paths": {
-      "@modules/*": ["./src/modules/*"],
+      "@modules/*": ["src/modules/*"],
+      "@sharedModules/*": ["./src/sharedModules/*"],
       "@decorators/*": ["./src/decorators/*"],
       "@guards/*": ["./src/guards/*"],
       "@middlewares/*": ["./src/middlewares/*"],

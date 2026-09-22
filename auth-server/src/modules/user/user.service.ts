@@ -2,79 +2,38 @@ import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
   Injectable,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { AccessTokenClaims } from '@interfaces/accessToken.interface';
 import { hashPassword, verifyPassword } from '@utils/password.util';
-import { ClientRepository } from '../client/client.repository';
-import { UserEntity } from './user.entity';
-import { UserRepository } from './user.repository';
-import type { SignupResult } from './interfaces/signup.interface';
+import { UserEntity } from '@modules/user/user.entity';
+import { UserRepository } from '@modules/user/user.repository';
 
 @Injectable()
 export class UserService {
-  constructor(
-    private readonly userRepository: UserRepository,
-    private readonly clientRepository: ClientRepository,
-  ) {}
+  constructor(private readonly userRepository: UserRepository) {}
 
-  async signup(
-    clientId: string,
-    email: string,
-    password: string,
-  ): Promise<SignupResult> {
-    const client = await this.clientRepository.findByClientId(clientId);
-    if (!client) {
-      throw new NotFoundException(`Client ${clientId} not found`);
-    }
-
-    const existing = await this.userRepository.findByClientAndEmail(
-      clientId,
-      email,
-    );
-    if (existing) {
-      throw new ConflictException(
-        `Email ${email} is already registered under this client`,
-      );
+  async signup(email: string, password: string): Promise<UserEntity> {
+    if (await this.userRepository.findByEmail(email)) {
+      throw new ConflictException(`Email ${email} is already registered`);
     }
 
     const user = new UserEntity();
     user.id = randomUUID();
-    user.clientId = clientId;
     user.email = email;
     user.passwordHash = await hashPassword(password);
 
-    const saved = await this.userRepository.save(user);
-
-    return { user: saved, allowedScopes: client.allowedScopes };
+    return this.userRepository.save(user);
   }
 
-  async remove(clientId: string, userId: string): Promise<void> {
-    const user = await this.userRepository.findById(userId);
+  // One failure for every cause — unknown email or wrong password — so the
+  // answer cannot be used to find out which emails are registered.
+  async verifyCredentials(email: string, password: string): Promise<UserEntity> {
+    const user = await this.userRepository.findByEmail(email);
 
-    if (!user || user.clientId !== clientId) {
-      throw new NotFoundException(`User ${userId} not found`);
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    await this.userRepository.deleteById(userId);
-  }
-
-  async changePassword(
-    claims: AccessTokenClaims,
-    currentPassword: string,
-    newPassword: string,
-  ): Promise<void> {
-    const user = await this.userRepository.findById(claims.sub);
-    if (!user) {
-      throw new NotFoundException(`User ${claims.sub} not found`);
-    }
-
-    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-      throw new UnauthorizedException('Current password is incorrect');
-    }
-
-    user.passwordHash = await hashPassword(newPassword);
-    await this.userRepository.save(user);
+    return user;
   }
 }

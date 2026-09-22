@@ -15,16 +15,21 @@ export class ClientResponseDto {
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.ALLOWED_SCOPES)
   readonly allowedScopes: string[];
 
+  @ApiProperty(CLIENT_PROPERTY_SWAGGER.REDIRECT_URIS)
+  readonly redirectUris: string[];
+
   private constructor(
     clientId: string,
     clientSecret: string,
     name: string,
     allowedScopes: string[],
+    redirectUris: string[],
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.name = name;
     this.allowedScopes = allowedScopes;
+    this.redirectUris = redirectUris;
   }
 
   static fromEntity(
@@ -36,6 +41,7 @@ export class ClientResponseDto {
       plainSecret,
       client.name,
       client.allowedScopes,
+      client.redirectUris,
     );
   }
 }

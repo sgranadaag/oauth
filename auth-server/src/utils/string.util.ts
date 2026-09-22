@@ -13,8 +13,8 @@ import { timingSafeEqual } from 'node:crypto';
  * sizes. It leaks the length, which is fine while every value compared here has
  * a fixed, public one; if it ever isn't, hash both sides and compare digests.
  *
- * Hashed values skip this: bcrypt already compares in constant time, so
- * passwords go through `@utils/password.util`.
+ * Hashed values skip this: bcrypt already compares in constant time, and
+ * passwords are the identity side's to check, never the oauth side's.
  *
  * @param value - The string the caller submitted.
  * @param expected - The string it is checked against.

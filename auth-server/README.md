@@ -1,80 +1,91 @@
 # auth-server
 
-An RFC 6749 authorization server implemented from scratch on NestJS — no
-auth library. It also stores the users, so in this repo it is the identity
-provider as well: see the root [README](../README.md) for how the roles
-split with `auth-provider`.
+An RFC 6749 authorization server and OpenID Connect provider, implemented
+from scratch on NestJS — no auth library. It registers clients, runs the
+authorization code flow and issues tokens, and it also keeps the accounts
+(`/users`). **The two sides never call each other**: the oauth side never
+sees a password, and the login app, [auth-front](../auth-front), is what
+checks one against `/users/verify` before telling the oauth side who
+signed in. See the root [README](../README.md) for the whole flow.
 
 ## Endpoints
 
-| Endpoint | Auth | What it does |
+| Endpoint | Called by | What it does |
 | --- | --- | --- |
-| `POST /oauth/token` | Basic `client_id:client_secret` | Every grant, dispatched on `grant_type` |
-| `POST /clients` | `x-admin-key` | Registers a client and returns its secret once |
-| `POST /users/signup` | Basic | Creates a user under the authenticated client |
-| `DELETE /users/:userId` | Basic | Deletes one of that client's users |
-| `POST /users/change-password` | Bearer | Changes the password of the token's subject |
+| `GET /oauth/authorize` | the browser | Validates the request, stores it, redirects to the sign-in page |
+| `GET /oauth/interactions/:id` | auth-front's server (`x-admin-key`) | Which client is asking, for which scopes |
+| `POST /oauth/interactions/:id/accept` | auth-front's server (`x-admin-key`) | Takes `{ subject, email }` — who signed in, already checked — issues a code, says where to send the browser |
+| `POST /oauth/token` | the client (Basic `client_id:client_secret`) | Every grant, dispatched on `grant_type` |
+| `GET /oauth/jwks` | anyone | The public signing key (JWK Set, RFC 7517), by `kid` — to verify ID and access tokens offline |
+| `POST /clients` | an admin (`x-admin-key`) | Registers a client with its scopes and redirect URIs; returns the secret once |
+| `POST /users/signup` | anyone | Creates an account. The email is unique across the whole provider |
+| `POST /users/verify` | auth-front's server (`x-admin-key`) | Checks email + password, returns the user or 401 |
 | `GET /docs` | — | Swagger UI |
+
+`/users` is the identity side: the accounts and their bcrypt hashes. It is
+a separate role that happens to run in the same process, and nothing in
+`/oauth` calls it — the login app does, and then presents the result.
 
 ## The grants
 
 | `grant_type` | Sends | Gets back |
 | --- | --- | --- |
+| `authorization_code` | `code`, `redirect_uri`, `code_verifier` | Access + refresh token, plus an `id_token` when `openid` was granted |
 | `client_credentials` | nothing else | Access token with `sub` = `client_id`, no refresh token |
-| `password` | `username` (the email) + `password` | Access + refresh token |
-| `otp` | `email` + `otp` | Access + refresh token; the code is single-use |
-| `refresh_token` | `refresh_token` | A new pair; the presented token is consumed |
+| `refresh_token` | `refresh_token` | A new pair; the presented token is consumed. Never past the session's fixed end |
 
-Three properties are worth knowing before reading the code:
+There is no `password` grant: a client never handles the user's password,
+which is the whole point of the authorization code flow (the OAuth 2.0
+Security BCP forbids it). A `grant_type` with no handler answers
+`unsupported_grant_type`.
 
-- **Scopes never widen.** A request narrows a ceiling — the client's
-  `allowedScopes`, or what the refresh token was issued for — and
-  `ScopeService` is the only place that decides it.
-- **Refresh tokens rotate, and reuse revokes the session.** Consuming is
-  atomic (`consumedAt: null` in the filter), so presenting a token twice
-  deletes every token sharing its `sessionId`.
-- **Access tokens are verified offline.** They are RS256 JWTs checked
-  against the public key, so nothing can withdraw one before its `exp`.
+What `authorization_code` checks, all as one `invalid_grant`: the code
+exists, is unused and unexpired, was issued to this client, for this exact
+`redirect_uri`, and the `code_verifier` hashes (S256) to the stored
+challenge. The code is spent before any check runs, so a failed attempt
+burns it.
 
-Nothing issues OTP codes yet: write one into Redis by hand to try that
-grant (`SET otp:<userId> 123456 EX 300`).
+What `/oauth/authorize` refuses to do: redirect anywhere while the client
+or its `redirect_uri` are unproven. Those errors are answered here as a 400;
+every later error goes back to the client's `redirect_uri`.
+
+What a refresh does **not** do: ask `/users` whether the person still
+exists. The oauth side never calls the identity side — the login app
+vouched for them at sign-in, and the session is the oauth side's from
+there. A session has a fixed end (30 days from sign-in) that rotation
+never extends; past it, the person signs in again through the login app.
 
 ## Running it
 
-Needs MongoDB on `27017` and Redis on `6379`. There is no Docker setup
-here on purpose.
+Needs MongoDB:
 
 ```bash
-cp .env.example .env          # first time
+cp .env.example .env          # ADMIN_API_KEY must match AUTH_SERVER_ADMIN_KEY in auth-front/.env
 npm i
 npm run generate-signing-keys # first time: writes src/secrets/*.pem
 npm run start:dev             # http://localhost:3000
 ```
 
-Then register a client with the `ADMIN_API_KEY` from `.env`, and sign a
-user up under it — the ordered walkthrough is in the root
-[README](../README.md).
+`AUTH_FRONT_URL` in `.env` is where `/oauth/authorize` sends the browser;
+`ADMIN_API_KEY` is the provider's own credential — it registers clients,
+opens the interaction endpoints and `/users/verify`, and the login app
+presents it too. A wrong one is a **403**, never a 401, so a
+misconfiguration cannot pass for a wrong password.
 
 ## Layout
 
 ```
-src/modules/oauth/     the protocol: token endpoint, dispatch, scopes, errors, grants
-src/modules/token/     minting, storing and rotating tokens — knows no protocol
-src/modules/client/    registered clients
-src/modules/user/      people, with their bcrypt-hashed passwords
-src/modules/otp/       one-time codes, in Redis
-src/global/redis/      the Redis connection, as a configurable module
-src/guards/            Basic (client), Bearer (access token), admin key
-src/utils/             keys, JWT signing and verification, password hashing
+src/modules/oauth/          the protocol: authorize, interactions, token endpoint, scopes, errors, grants
+src/modules/authorization/  pending authorization requests and one-time codes
+src/modules/token/          minting, storing and rotating tokens, sessions with a fixed end — knows no protocol
+src/modules/client/         registered clients, with their redirect URIs
+src/modules/user/           the accounts: signup and credential check — called by nothing above
+src/guards/                 Basic (client), admin key, login app key
+src/utils/                  keys, JWT and ID token signing, PKCE, bcrypt, constant-time comparison
 ```
 
-There are no migrations: MongoDB collections are schemaless, and the
-indexes come from the entities.
-
-## Conventions
-
-[.claude/rules/architecture.md](.claude/rules/architecture.md) and
-[.claude/rules/coding-standards.md](.claude/rules/coding-standards.md)
-hold the module structure, the naming and the decisions that are easy to
-undo by accident. **This project has no tests, no linter and no
-formatter** — it is meant to be read and run.
+One MongoDB database, five collections: `clients`, `tokens`,
+`authorization_requests`, `authorization_codes` and `users`.
+Deliberately light: no tests, no linter, no migrations. The `Dockerfile`
+is for the root `docker-compose.yml`, which also writes the signing keys on
+first start.

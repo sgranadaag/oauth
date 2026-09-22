@@ -13,8 +13,10 @@ decisions). See `.claude/rules/architecture.md`.
 
 This is an authorization server; its request bodies are credentials.
 
-- **Never log a request body.** `/oauth/token` carries `password` and
-  `client_secret` in cleartext, `/users/signup` carries `password`.
+- **Never log a request body.** `/oauth/token` carries codes, PKCE
+  verifiers and refresh tokens.
+- **Never log the `x-api-key` or `x-admin-key` headers** — the login
+  app's and the admin's credentials.
 - **Never log the `Authorization` header.** `describeCaller` reads only
   the *username* half of Basic auth (the `client_id`) and stops at the
   first colon; the secret after it is never read. A bearer token is

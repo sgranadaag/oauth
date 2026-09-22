@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+} from 'class-validator';
 import { CLIENT_PROPERTY_SWAGGER } from '../client.swagger';
 
 export class CreateClientDto {
@@ -12,4 +18,10 @@ export class CreateClientDto {
   @IsArray()
   @IsString({ each: true })
   allowedScopes: string[];
+
+  @ApiProperty(CLIENT_PROPERTY_SWAGGER.REDIRECT_URIS)
+  @IsOptional()
+  @IsArray()
+  @IsUrl({ require_tld: false }, { each: true })
+  redirectUris?: string[];
 }

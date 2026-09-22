@@ -15,7 +15,7 @@ export const CLIENT_SWAGGER = {
     security: ADMIN_KEY_SECURITY,
     responses: {
       201: { description: 'Client created; credentials returned once.' },
-      401: { description: 'Missing or incorrect `x-admin-key` header.' },
+      403: { description: 'Missing or incorrect `x-admin-key` header.' },
     },
   },
 } as const;
@@ -28,9 +28,17 @@ export const CLIENT_PROPERTY_SWAGGER = {
   ALLOWED_SCOPES: {
     description:
       'Scope ceiling for this client. Every token it or its users obtain is ' +
-      'capped at this set. Values must come from the scopes this server ' +
-      'recognises (SUPPORTED_SCOPES).',
-    example: ['read', 'write'],
+      "capped at this set. Include 'openid' for the client to receive an ID " +
+      'token from the authorization_code grant.',
+    example: ['openid', 'read', 'write'],
+    type: [String],
+  },
+  REDIRECT_URIS: {
+    description:
+      'Where the authorization endpoint may send a code for this client. ' +
+      'Compared by exact match — no prefixes, no wildcards. Only needed for ' +
+      'authorization_code.',
+    example: ['http://localhost:3001/api/auth/callback'],
     type: [String],
   },
   CLIENT_ID: {

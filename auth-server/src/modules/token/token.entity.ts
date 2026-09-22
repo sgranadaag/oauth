@@ -36,6 +36,11 @@ export class TokenEntity {
   @Column()
   sessionId: string;
 
+  // Set at sign-in and copied unchanged onto every rotated token. `expiresAt`
+  // never goes past it, so checking `expiresAt` alone enforces both.
+  @Column()
+  sessionExpiresAt: Date;
+
   @Column()
   scope: string;
 

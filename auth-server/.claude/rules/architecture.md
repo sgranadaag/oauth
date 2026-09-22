@@ -40,15 +40,17 @@ constants go in one `<name>.constants.ts` and interfaces in an
 `interfaces/` folder — **not** a collected `<name>.interfaces.ts`, which
 is the shape this replaced. (A subfolder is the one exception; see
 below.) Create either only when there is something to put in it
-(`oauth.constants.ts` holds the issuer, audience, token lifetime and
-error codes that module defines).
+(`oauth.constants.ts` holds the token type and the RFC 6749 error codes;
+`token.constants.ts` holds the issuer, audience and token lifetimes).
 
 **Every interface and type a module needs lives in
 `<module>/interfaces/`, split by responsibility** — one file per
 subject, named `<subject>.interface.ts` (singular, matching
 `src/interfaces/`), holding the types that belong to that subject. The
-oauth module root has one: `token.interface.ts` (`TokenRequestParams`,
-`IssueTokenInput`, `TokenResponse`).
+oauth module root has two, one per endpoint: `tokenEndpoint.interface.ts`
+(`TokenRequestParams`, `TokenResponse`) for `POST /oauth/token`, and
+`authorizeEndpoint.interface.ts` (`AuthorizeQuery`, `InteractionDetails`,
+`InteractionAcceptResult`) for the front channel.
 
 This holds **even for a type used by exactly one file**: a grant's own
 param shape is declared in `interfaces/` and imported, not left local to
@@ -68,7 +70,7 @@ Three kinds live here:
   have to agree on. Transport, database and similar setup contracts
   belong here too as they appear.
 - **Guard contracts** — `authenticatedRequest.interface.ts`
-  (`BasicTokenRequest`, `BearerTokenRequest`): what a guard writes onto
+  (`BasicTokenRequest`): what a guard writes onto
   the request and a controller reads back off it. A guard is a layer, not
   a module, so its types cannot live in a module's folder.
 - **Error shapes**, once an app-wide one exists — the contract every
@@ -78,14 +80,14 @@ Three kinds live here:
   module. A shape one module owes its callers is that module's; a shape
   this app defines for itself is everyone's.
 
-Plus `accessToken.interface.ts` (`AccessTokenClaims` and its sign/verify
-options), which is the same case as the guards: produced by
-`@utils/jwt.util`, consumed by `BearerTokenGuard` — two layers, no
-module.
+Plus `accessToken.interface.ts` (`AccessTokenClaims` and its sign
+options): the shape `@utils/jwt.util` signs, which whoever verifies the
+token later has to agree on. It belongs to no module.
 
 **Everything a module owns goes in that module instead**: the result of
-a service method (`SignupResult`, `CreateClientResult`), a grant's param
-shape, the token request and response bodies. These describe this
+a service method (`CreateClientResult`), a grant's param shape, the
+token request and response bodies, who signed in
+(`AuthenticatedUser`). These describe this
 server's behaviour, and each has exactly one owner.
 
 The test, in order:
@@ -100,10 +102,10 @@ to neither, that is the signal it is infrastructure — and that it
 belongs in `src/interfaces/`.
 
 Group a module's constants and DI tokens in **one** `<name>.constants.ts`
-rather than a file per value. `oauth.constants.ts` holds
-`DEFAULT_ISSUER`, `DEFAULT_AUDIENCE`, `ACCESS_TOKEN_TTL_SECONDS`,
-`TOKEN_TYPE` and the `OAUTH_ERRORS` codes — the values a grant, the
-token service and `BearerTokenGuard` all have to agree on.
+rather than a file per value. `token.constants.ts` holds
+`DEFAULT_ISSUER`, `DEFAULT_AUDIENCE` and the token lifetimes — the
+values every minted token carries and every verifier has to agree on;
+`oauth.constants.ts` holds `TOKEN_TYPE` and the `OAUTH_ERRORS` codes.
 
 **A module subfolder that is an open-ended set carries its own
 constants and interfaces, as two flat files** —
@@ -118,9 +120,8 @@ grantTypes/
   grantTypes.interfaces.ts   # GrantHandler, GrantTypeRegistration, each grant's params
   grantTypes.registry.ts     # the set, as data
   services/
+    authorizationCodeGrant.service.ts
     clientCredentialsGrant.service.ts
-    passwordGrant.service.ts
-    otpGrant.service.ts
     refreshTokenGrant.service.ts
 ```
 
@@ -147,13 +148,20 @@ deliberately removed.
   any value queried against the `@ObjectIdColumn` into an `ObjectId`, so
   a UUID cannot live there — while "ids are plain strings, with no value
   object" is a settled decision for this codebase. Foreign keys
-  (`User.clientId`, `TokenEntity.userId`) hold that same string.
+  (`TokenEntity.clientId`, `TokenEntity.userId`) hold that same string —
+  and `userId` is the `subject` the login app named, an id this server
+  never looks up.
 - **There are no relations.** TypeORM does not join on MongoDB, so a
   parent/child link is the id field and nothing more; a caller that
   wants the parent asks its repository. Constraints that a relational
-  schema would express come from indexes instead — "one email per
-  client" is `@Index(['clientId', 'email'], { unique: true })` on
-  `UserEntity`.
+  schema would express come from indexes instead: a token's `sessionId` is indexed because revoking a
+  session deletes by it.
+- **One database, one collection per entity**: `clients`, `tokens`,
+  `authorization_requests`, `authorization_codes` and `users`. The last
+  one belongs to the `user` module alone — **the oauth side must never
+  query `users`**, even though the same connection would allow it. It
+  learns about a person only from what the login app tells it at
+  sign-in.
 - **There are no migrations either.** Collections are schemaless, so
   `mongoConfig` sets `synchronize: true`, which on MongoDB only creates
   the declared indexes. Adding a field is nothing; adding a constraint
@@ -161,10 +169,19 @@ deliberately removed.
   a script, not a migration.
 - **One `<Name>Repository` class per module, injected by concrete
   class — no port/interface, no `Symbol` token.** A module that needs
-  another module's repository (e.g. `UserService` needing
-  `ClientRepository`) gets it because the owning module exports the
+  another module's repository (e.g. the refresh grant needing
+  `TokenRepository`) gets it because the owning module exports the
   class itself from its `@Module()` `exports` array; Nest resolves a
   class as its own DI token, so nothing else is needed.
+- **A repository is total over what the wire can send.** A lookup takes
+  the id as it arrives — `undefined` included — and answers `null`
+  rather than making its caller guard first: a Mongo filter built from an
+  undefined value can end up empty and match the *first* document instead
+  of none (`ClientRepository.findByClientId`). The guard belongs in the
+  layer that builds the query, so no caller can forget it. **It stays a
+  `null`, never a throw**: what "not found" means is the caller's to
+  decide — a 400 without a redirect in `/authorize`, a 401 in
+  `BasicTokenGuard`, a fallback display name in `interaction()`.
 - **One `<Name>Service` class per module, not one class per use case.**
   Every action the module supports is a named method on that one class
   (`ClientService.create(...)`, and any future ones on the same class)
@@ -175,15 +192,75 @@ deliberately removed.
   entity/repository/service/controller files sitting next to them, even
   though everything else is flat.
 - **The OAuth protocol lives in one module, `src/modules/oauth/`**, and
-  nothing outside it knows the protocol exists. It owns the token
-  endpoint (`oauth.controller.ts`), the dispatch by `grant_type`
-  (`oauth.service.ts`), the scope policy (`scope.service.ts`), the RFC
-  6749 §5.2 error body (`oauth.exception.ts`) and one file per grant
-  under `grantTypes/`. It depends on the domain modules (`client`,
-  `user`, `otp`, `token`); **never the reverse** — a domain module that
-  needs something from here has its responsibility in the wrong place.
+  nothing outside it knows the protocol exists. It owns both endpoints
+  of RFC 6749 — authorization (`GET /oauth/authorize` and the interaction
+  endpoints the login app calls) and token (`POST /oauth/token`, the
+  dispatch by `grant_type`) — plus the scope policy
+  (`scope.service.ts`), the RFC 6749 §5.2 error body
+  (`oauth.exception.ts`) and one file per grant under `grantTypes/`. It
+  depends on the domain modules (`client`, `authorization`, `token`) —
+  but **not on `user/`, which is the identity side**: the accounts, their
+  bcrypt hashes, `POST /users/signup` and `POST /users/verify`. It is a
+  second role sharing one process, reached over HTTP by the login app
+  like any other caller, and `UserModule` exports nothing so the two
+  cannot be wired together by accident — **never the reverse** — a domain module that needs something
+  from here has its responsibility in the wrong place.
+- **`/oauth/authorize` fails in two ways, on purpose.** While the client
+  or its `redirect_uri` are unproven, errors are answered on the spot and
+  the browser goes nowhere — redirecting to an unverified URL would make
+  the endpoint an open redirector. Once both check out, every other error
+  goes back to the `redirect_uri` as `error`, `error_description`,
+  `state` (RFC 6749 §4.1.2.1). `redirect_uri` is compared by exact string
+  match against `ClientEntity.redirectUris`; never relax that to a prefix.
+- **`src/modules/authorization/` stores the two short-lived documents of
+  the code flow**: a validated request waiting for sign-in
+  (`authorization_requests`, keyed by the `interaction` id the sign-in
+  page receives) and the one-time code it turns into
+  (`authorization_codes`, keyed by the code value). It owns their
+  lifecycle — creation, expiry, single use — and decides nothing about
+  OAuth. Its one repository serves both collections, because the two are
+  stages of one flow and never read apart.
+- **Single use is a write, not a read.** A request is claimed by deleting
+  it and a code is redeemed by an `updateOne` filtered on
+  `consumedAt: null`; the caller whose write changed the document wins.
+  A read-then-check would let two simultaneous submits both succeed. A
+  code is spent before its checks run, so a stolen code tried with the
+  wrong PKCE verifier is burned rather than left replayable.
+- **ID tokens are owed only for `openid`.** The `authorization_code` grant
+  asks `TokenService.issueIdToken` for one when the granted scope contains
+  `openid`; the token module signs it (`aud` = `client_id`, `typ: JWT`,
+  `nonce` echoed) without knowing the rule.
+- **Who signed in is told to the oauth module, not checked by it.** The
+  login app (`auth-front`'s server side) verifies the person against
+  `/users/verify` and calls `POST /oauth/interactions/:id/accept` with
+  `{ subject, email }`; `OauthService.acceptInteraction` believes it and
+  issues the code. What makes that safe is `AdminGuard`: both interaction
+  endpoints are behind the provider key, and **`accept` must never become
+  reachable without it** — open, it would hand out codes for any user, no
+  password asked. How a person proves who they are (a password today, MFA
+  later) is the login app's and the `user` module's business and never
+  reaches the oauth module.
+- **`oauth` never calls `user`, though both live here.** The identity
+  side vouches for a person once, at sign-in, through the login app; from
+  there the session is the oauth side's to manage. A refresh checks only
+  its own record, never whether the person still exists: **`UserModule`
+  exports nothing, and `oauth` must not import it**. Wiring the two
+  together would collapse a boundary that is a deployment decision, not a
+  design one — today one process, tomorrow two.
+
+  What bounds a session instead is its **fixed end**: `sessionExpiresAt`,
+  set at sign-in to `SESSION_TTL_SECONDS` and copied unchanged onto every
+  rotated token, whose own `expiresAt` is capped at it. Rotation renews
+  the token, never the session, so the person is sent back through the
+  login app — and vouched for again — at least that often.
+
+  Ending a user's sessions *before* that end, once the identity side can
+  delete or block users, is a revocation it **pushes** to this server
+  (by `subject`, behind a key — not written yet), never a question this
+  server asks.
 - **Minting tokens is `src/modules/token/`, and it is protocol-free.**
-  `TokenService.issue({ clientId, userId?, scope, sessionId? })` signs
+  `TokenService.issue({ clientId, userId?, scope, sessionId?,
+  sessionExpiresAt? })` signs
   the access token, stores a refresh token when there is a user, and
   returns `IssuedTokens` in its own vocabulary — no `access_token`, no
   `grant_type`, nothing from RFC 6749. `TokenRepository` and
@@ -198,9 +275,7 @@ deliberately removed.
   is that boundary leaking.
 - **One `<name>Grant.service.ts` per grant**, in
   `grantTypes/services/`, an `@Injectable()` implementing `GrantHandler`
-  — a single `handle(clientId, params)` returning `IssuedTokens` — with
-  its unit test mirroring the path in
-  `src/tests/oauth/grantTypes/services/`.
+  — a single `handle(client, params)` returning `IssuedTokens`.
 
   **Registration is data, not code.** `grantTypes/grantTypes.registry.ts`
   exports `GRANT_TYPES: GrantTypeRegistration[]` — `{ type, service }`
@@ -212,17 +287,18 @@ deliberately removed.
   entry is `unsupported_grant_type`, which is also how the grants that
   aren't written yet answer.
 
-- **A grant service owns only what makes its grant different: how the
-  user proves who they are.** `handle()` reads the params, calls its own
-  `authenticateUser(clientId, params)` — which throws an
-  `OauthException` carrying `invalid_grant` when the proof fails —
-  narrows the scope through `ScopeService`, and hands both to
-  `TokenService.issue(...)`.
-  **Authentication stays in the grant**, with whatever it needs injected
-  directly (`UserRepository` and `verifyPassword` for password, plus
-  `OtpRepository` for otp); it is not delegated to `UserService`. A
-  grant that signs its own token, on the other hand, is a grant
-  reimplementing `TokenService`.
+- **A grant service owns only what makes its grant different: what
+  the caller presents as proof** — a code and its PKCE verifier, a
+  refresh token, or the client alone. `handle()` validates that proof —
+  throwing an `OauthException` carrying `invalid_grant` when it fails —
+  narrows the scope through `ScopeService`, and hands the result to
+  `TokenService.issue(...)`. **Deciding what counts as proof stays in the
+  grant**; a grant that signs its own token is a grant reimplementing
+  `TokenService`.
+- **No oauth endpoint takes a password.** A password is typed only on
+  `auth-front`, and the only endpoint that reads one is `/users/verify`,
+  which `auth-front`'s server side calls. The `password` grant (RFC 6749
+  §4.3) was removed on purpose; don't bring it back unless the user asks.
 - **Every grant narrows a ceiling, none may widen one.**
   `ScopeService.narrow(ceiling, requested)` is that rule, and the ceiling
   is the grant's to supply: the client's `allowedScopes` for most, and
@@ -274,7 +350,7 @@ Each module keeps its schemas in `<module>.swagger.ts`, in two exports:
 
 **`<module>.swagger.ts` imports no DTOs.** The response class is passed
 as `SwaggerDocs`' second argument instead
-(`@SwaggerDocs(USER_SWAGGER.LOGIN, LoginResponseDto)`), where it is
+(`@SwaggerDocs(CLIENT_SWAGGER.CREATE, ClientResponseDto)`), where it is
 attached to the schema's 2xx entry. Naming it inside the schema would
 close a cycle — the DTOs import `<MODULE>_PROPERTY_SWAGGER` back out of
 that same file, so the half-initialised module would leave
@@ -292,30 +368,22 @@ own; whatever they hold belongs to the caller.
 
 The test: **would this module still make sense, unchanged, in a product
 that has nothing to do with OAuth?** Yes → `src/global/`. It names a
-concept this server owns (client, user, oauth) → `src/modules/`.
+concept this server owns (client, authorization, token, oauth) →
+`src/modules/`.
 
-One exists today:
-
-- `redis/` — `RedisModule`, which manages the Redis connection and
-  offers it under the `REDIS_CLIENT` symbol (`redis.constants.ts`),
-  closing it on shutdown. It decides nothing about what is stored:
-  **the module that owns the data writes its own repository over that
-  client**, in its own module, exactly as it would over a TypeORM
-  repository.
+**None exists today.** The only one was the Redis connection, which
+served the OTP grant and left with it. The folder and its `@global/*`
+alias come back with the next such module.
 
 **A global module is registered once, as a dynamic module, the way
-`TypeOrmModule.forRootAsync` is** — `RedisModule.forRootAsync({ imports,
-inject, useFactory })` in `AppModule`, taking the factory that builds
-its options. The class carries `@Global()`, so what it exports is
-injectable anywhere without every module importing it — the same deal
-`TypeOrmModule` gives repositories, and the reason a consumer like
-`OtpModule` lists only its own providers.
-
-Their construction config still lives in `src/config/` with everything
-else's (`redisConfig` beside `postgresConfig`) — a
-global module is where the wiring lives, not where the settings are
-decided.
-Import them through the `@global/*` alias.
+`TypeOrmModule.forRootAsync` is** — `forRootAsync({ imports, inject,
+useFactory })` in `AppModule`, taking the factory that builds its
+options, with `@Global()` on the class so what it exports is injectable
+anywhere without every consumer importing it. It decides nothing about
+what is stored: the module that owns the data writes its own repository
+over what the global module provides. Its construction config lives in
+`src/config/` with everything else's — a global module is where the
+wiring lives, not where the settings are decided.
 
 ## What this does *not* apply to
 
@@ -326,10 +394,10 @@ Import them through the `@global/*` alias.
   today: `oidc-provider` was removed and the protocol is implemented
   here. It applies again the moment a library is adopted.)
 - **DI tokens for bridging a third-party value are not the same problem
-  as an internal port/token.** `REDIS_CLIENT` is a `Symbol` token
-  carrying a connection that has to be constructed once, not an
-  interface standing in for a swappable implementation — so it is
-  unaffected by "no ports/tokens for repositories or use cases."
+  as an internal port/token.** A `Symbol` token carrying a connection
+  that has to be constructed once is not an interface standing in for a
+  swappable implementation — so it is unaffected by "no ports/tokens for
+  repositories or use cases."
 
 ## Cross-cutting code
 
@@ -337,38 +405,36 @@ Code with no per-module home is split into dedicated top-level layers
 by *kind*, not lumped into one general-purpose `common/` folder:
 
 - `src/guards/` — **every** route-level allow/deny guard, without
-  exception. Three today, one per credential shape:
-  - `AdminGuard` — the `x-admin-key` bootstrap credential. Depends only
-    on the global `ConfigService`.
+  exception. Two today, one per credential shape:
+  - `AdminGuard` — the `x-admin-key` provider credential
+    (`ADMIN_API_KEY`), on `POST /clients`, both interaction endpoints and
+    `/users/verify`: everything that is the provider talking to itself.
+    Depends only on the global `ConfigService`, compares through
+    `constantTimeEquals`, and answers **403** — never 401, which on
+    `/users/verify` means wrong credentials.
   - `BasicTokenGuard` — authenticates a *client* via
     `Authorization: Basic base64(clientId:clientSecret)`, the same
     credential shape `POST /oauth/token` uses. Depends on
     `ClientRepository`.
-  - `BearerTokenGuard` — authenticates a caller by an access token this
-    server issued (`Authorization: Bearer <jwt>`). Parses the header and
-    attaches the decoded claims to `request.token`; all crypto is
-    delegated to `@utils/jwt.util`. Depends only on `ConfigService`.
 
-    **It stays offline — no database read, nothing consulted.** A token
-    cannot be withdrawn before its `exp`; see the coding-standards rule
-    for why that's the accepted trade-off and not a gap to close with a
-    denylist lookup.
+  There is no bearer guard: nothing on this server is a protected
+  resource. Verifying an access token is the job of whichever resource
+  server accepts it, offline, against the public key.
 
   A guard depending on a module's repository does *not* move into that
   module — the layer holds the class, and the module whose controller
-  uses it registers it as a provider (`UserModule` lists
+  uses it registers it as a provider (`OauthModule` lists
   `BasicTokenGuard`, and already imports `ClientModule` for the
   `ClientRepository` it needs). Guards that need only global providers
-  (`AdminGuard`, `BearerTokenGuard`) need no registration at all —
-  `@UseGuards(TheGuard)` is enough. Keeping the registration with the
-  consumer is what lets the guards layer stay free of module-ownership
-  questions.
+  (`AdminGuard`) need no registration at all — `@UseGuards(TheGuard)`
+  is enough. Keeping the registration with the consumer is what lets the
+  guards layer stay free of module-ownership questions.
 - `src/decorators/` — composed decorators, one `<name>.decorator.ts` per
   subject. One today:
   - `swaggerDocs.decorator.ts` — `SwaggerDocs(schema, responseType?)`,
     built with Nest's `applyDecorators`. It replaces the five-to-seven
     `@Api*` decorators every handler used to stack with a single
-    `@SwaggerDocs(USER_SWAGGER.LOGIN)`, reading which decorators to
+    `@SwaggerDocs(OAUTH_SWAGGER.TOKEN)`, reading which decorators to
     apply off the schema's own keys. See "Swagger schemas" below for the
     schema shape and why `responseType` is a separate argument.
 - `src/middlewares/` — request-level Express/Nest middleware, distinct
@@ -382,34 +448,47 @@ by *kind*, not lumped into one general-purpose `common/` folder:
     it.
 - `src/utils/` — generic utilities, split by subject:
   - `keys.util.ts` — the **only** place the signing key files are read.
-    Exposes `getPrivateKeyPem()`, `getPublicKeyPem()`, and
-    `getSigningJwks()` (which derives the JWK Set from the PEM, in
-    memory, for a JWKS endpoint that does not exist yet). All three
-    cache after first read.
-  - `jwt.util.ts` — the **only** place access tokens are signed and
-    verified, via `jsonwebtoken` on the PEMs from `keys.util`. Do not
-    verify a token anywhere else; guards call `verifyAccessToken()`.
+    Exposes `getPrivateKeyPem()`, `getPublicKeyPem()`,
+    `getSigningKeyId()` (the `kid`: the key's RFC 7638 thumbprint) and
+    `getPublicJwks()` (the JWK Set `GET /oauth/jwks` serves). All cache
+    after first use. **The JWK Set is derived from `public.pem`, never
+    from the private key** — so no private member can leak through it.
+  - `jwt.util.ts` — the **only** place tokens are signed (access and ID
+    tokens), via `jsonwebtoken` on the private PEM from `keys.util`, with
+    `kid` in every header. Verification is not here: it belongs to
+    whoever accepts the token — the client for its ID token, a resource
+    server for access tokens — against `GET /oauth/jwks`.
   - `string.util.ts` — string helpers that aren't about one subject.
     `constantTimeEquals` is the **only** constant-time comparison in the
     codebase: every value an attacker submits the guess for goes through
-    it, the plaintext client secret in `BasicTokenGuard` and the
-    one-time password in `OtpGrantService`. Don't hand-roll a
-    `timingSafeEqual` beside a length check again — that is how two
-    copies drift.
-  - `password.util.ts` — the **only** place a user password is hashed or
-    checked (`hashPassword`, `verifyPassword`), and the only place the
-    bcrypt cost factor is written down. `UserService` and
-    `PasswordGrantService` both call it; don't import `bcryptjs`
-    anywhere else in `src/modules/`, or the two paths can drift on cost
-    or comparison. Tests are the one exception — they hash fixtures at
-    cost 4 directly, because cost 12 is ~600ms a call and a fixture
-    doesn't need the work factor.
+    it, today the plaintext client secret in `BasicTokenGuard` and the
+    provider key in `AdminGuard`. Don't hand-roll a `timingSafeEqual`
+    beside a length check again — that is how two copies drift.
+  - `random.util.ts` — `createRandomValue(byteLength)`, the **only** way a
+    bearer value is generated (authorization request ids, codes, refresh
+    tokens): CSPRNG bytes, base64url-encoded. The byte length is a
+    constant of the module that owns the value.
+  - `url.util.ts` — `buildUrl(baseUrl, params)`, how **every**
+    redirect this server sends is built: back to a client with a `code`
+    and `state`, back to it with an `error`, on to the login page with an
+    `interaction` id. An `undefined` value is left out rather than
+    written as the string `"undefined"`, so an optional parameter needs
+    no decision at the call site.
+  - `time.util.ts` — `secondsFromNow(seconds)` for storing an expiry and
+    `isExpired(expiresAt)` for checking one. Every short-lived document
+    goes through both, so "expired at the boundary" means the same thing
+    everywhere.
+
+  - `password.util.ts` — `hashPassword` and `verifyPassword`, bcrypt and
+    the **only** place the cost factor is written down. It belongs to the
+    identity side: `UserService` is its only caller, and nothing in
+    `oauth` has any business with it.
 
   `src/secrets/` holds only the two PEM files — there is no second key
   format on disk to drift.
 - `src/config/` — construction/configuration functions that take their
-  dependencies and return a config object: `postgresConfig` for TypeORM,
-  `redisConfig` for the Redis connection. Config decisions live
+  dependencies and return a config object: `mongoConfig` for TypeORM.
+  Config decisions live
   here, not inside the thing being configured.
 - `src/constants/` — env-var *names* only (`environment.constant.ts`).
   Anything a module owns goes in that module's own `<name>.constants.ts`
@@ -424,12 +503,13 @@ by *kind*, not lumped into one general-purpose `common/` folder:
 
 Each is a flat, purpose-named folder with its own path alias
 (`@decorators/*`, `@guards/*`, `@middlewares/*`, `@utils/*`,
-`@config/*`, `@constants/*`, `@interfaces/*`, `@global/*` in `tsconfig.json`,
-mirrored in `package.json`'s and `test/jest-e2e.json`'s Jest
-`moduleNameMapper`) — use those aliases (and `@modules/*`, `@tests/*`)
-for all imports, no relative `../../..` climbing across a module
-boundary. **Adding a layer means adding its alias in all three files**;
-miss one and it compiles but the Jest suites can't resolve it. There is no `src/common/` — it held
+`@config/*`, `@constants/*`, `@interfaces/*` in `tsconfig.json`) — use
+those aliases (and `@modules/*`) for all imports, no relative
+`../../..` climbing across a module boundary. **Adding a layer means
+adding its alias to `tsconfig.json`**, and the path has to start with
+`./`: without a `baseUrl`, a bare `src/...` value makes TypeScript
+reject the alias, and the editor then rewrites every import it failed to
+resolve into a relative path. There is no `src/common/` — it held
 only `guards/` before this split and was removed once that moved out;
 don't recreate it as a catch-all for whatever doesn't have an obvious
 layer yet, add or ask for a properly named one instead.

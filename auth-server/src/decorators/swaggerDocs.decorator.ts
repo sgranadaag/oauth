@@ -67,13 +67,15 @@ export function SwaggerDocs(
 
   for (const [status, response] of Object.entries(schema.responses)) {
     const statusCode = Number(status);
+    const responseOptions = response as ApiResponseOptions;
+    const responseTypeField =
+      responseType && documentsSuccess(statusCode) ? { type: responseType } : {};
+
     decorators.push(
       ApiResponse({
         status: statusCode,
-        ...(response as ApiResponseOptions),
-        ...(responseType && documentsSuccess(statusCode)
-          ? { type: responseType }
-          : {}),
+        ...responseOptions,
+        ...responseTypeField,
       }),
     );
   }

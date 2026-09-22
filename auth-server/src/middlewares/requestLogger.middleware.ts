@@ -1,10 +1,6 @@
 import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
-import type { AccessTokenClaims } from '@interfaces/accessToken.interface';
-import type {
-  BasicTokenRequest,
-  BearerTokenRequest,
-} from '@interfaces/authenticatedRequest.interface';
+import type { BasicTokenRequest } from '@interfaces/authenticatedRequest.interface';
 
 const SERVER_ERROR_STATUS = 500;
 const CLIENT_ERROR_STATUS = 400;
@@ -24,9 +20,7 @@ const SENSITIVE_QUERY_PARAMS = new Set([
   'id_token_hint',
 ]);
 
-type LoggableRequest = Request &
-  Partial<Pick<BasicTokenRequest, 'clientId'>> &
-  Partial<Pick<BearerTokenRequest, 'token'>>;
+type LoggableRequest = Request & Partial<Pick<BasicTokenRequest, 'client'>>;
 
 function redactQuery(originalUrl: string): string {
   const [path, query] = originalUrl.split('?');
@@ -61,13 +55,8 @@ function readBasicAuthClientId(request: Request): string | undefined {
 }
 
 function describeCaller(request: LoggableRequest): string {
-  if (request.clientId) {
-    return ` client=${request.clientId}`;
-  }
-
-  const claims: AccessTokenClaims | undefined = request.token;
-  if (claims) {
-    return ` sub=${claims.sub} client=${claims.client_id}`;
+  if (request.client) {
+    return ` client=${request.client.id}`;
   }
 
   const basicAuthClientId = readBasicAuthClientId(request);

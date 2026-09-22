@@ -1,132 +1,225 @@
 # oauth
 
 What happens when you click "Sign in with Google", built from scratch and
-split into the two pieces that actually exist behind that button:
+split into the pieces that actually exist behind that button:
 
 ```
-auth-provider  the login screen a person sees          Next.js  :3001
-auth-server    issues the tokens, stores the users     NestJS   :3000
+client-front  the app a person signs in to                     Next.js  :3001
+auth-front    the provider's sign-in page (its login app)      Next.js  :3003
+auth-server   the provider's OAuth / OpenID endpoints          NestJS   :3000
+              plus /users — the accounts and their passwords
 ```
 
-No auth library on either side. The point is to read the flow end to end.
+The last two together are "the provider" — the part Google plays. No auth
+library anywhere: the point is to read the flow end to end.
+
+**The authorization server and the identity provider are different
+roles**, even though they run in one process here: `/oauth` issues tokens
+and `/users` owns the accounts, and **neither calls the other**. The login
+app is what joins them: it asks `/users` whether a password is right, and
+then tells `/oauth` who signed in. Split them into two services and
+nothing about the flow changes.
 
 ## The roles
 
-RFC 6749 names four roles. This repo collapses two of them on purpose:
+| Role | Here |
+| --- | --- |
+| **Client** | `client-front` — holds a `client_id` and a `client_secret`, never sees a password |
+| **Authorization Server** (OpenID Provider) | `auth-server`'s `/oauth` — `/oauth/authorize`, `/oauth/token`, `/oauth/jwks` |
+| **Identity Provider** | `auth-server`'s `/users` — the accounts and their bcrypt hashes |
+| **Resource Owner** | a person, whose account lives in `/users` |
+| **Resource Server** | none yet — an API accepting these tokens would verify them offline against `GET /oauth/jwks` |
 
-| Role | Here | Why |
-| --- | --- | --- |
-| Authorization Server | `auth-server` | `POST /oauth/token` |
-| Resource Server | `auth-server` | the routes behind its bearer guard |
-| Resource Owner | a user in `auth-server` | in real deployments the identity provider is often a separate system; here it is the same process, so the passwords live here |
-| Client | `auth-provider` | it holds a `client_id` and a `client_secret` |
+`auth-front` is not a protocol role: it is the provider's own **login
+app**, the one place a person types their password.
 
-The one that surprises people: **`auth-provider` is a Client**, not a
-provider. It looks like one to a person, but in the protocol it is the
-application asking for tokens. It is a *confidential* client — it has a
-secret, and a server side to keep it on.
+## The flow, exactly
 
-[docs/diagrams/](docs/diagrams/) has one interactive diagram per grant,
-plus a proposal for `authorization_code`. They are standalone HTML files:
-open them directly.
+Authorization code with PKCE, plus OpenID Connect's ID token:
 
-## Running it
-
-**1. Start the stores and the server**
-
-MongoDB on `27017` and Redis on `6379`, however you prefer to run them —
-there is no Docker setup in this repo on purpose. Then:
-
-```bash
-cd auth-server
-cp .env.example .env          # first time; point MONGO_URI / REDIS_* at your instances
-npm i
-npm run generate-signing-keys # first time: the RS256 key pair
-npm run start:dev             # http://localhost:3000
+```
+ browser        client-front       auth-server /oauth    auth-front     auth-server /users
+    │  Sign in        │                  │                  │                  │
+    ├────────────────►│                  │                  │                  │
+    │  302 /oauth/authorize?client_id&redirect_uri&state&nonce&code_challenge  │
+    │◄────────────────┤                  │                  │                  │
+    ├───────────────────────────────────►│ validates, stores the request       │
+    │  302 auth-front/login?interaction=…                   │                  │
+    │◄───────────────────────────────────┤                  │                  │
+    ├──────────────────────────────────────────────────────►│ shows who asks   │
+    │  email + password (typed here, and only here)         │  /users/verify   │
+    ├──────────────────────────────────────────────────────►├─────────────────►│
+    │                 │                  │                  │◄─────────────────┤ { id, email }
+    │                 │                  │◄─────────────────┤ accept { subject, email }
+    │                 │                  │ issues a one-time code              │
+    │                 │                  ├─────────────────►│ { redirectTo }   │
+    │  redirect to client-front/callback?code&state         │                  │
+    │◄──────────────────────────────────────────────────────┤                  │
+    ├────────────────►│ checks state     │                  │                  │
+    │                 ├─────────────────►│ POST /oauth/token                   │
+    │                 │  code + code_verifier + client secret                  │
+    │                 │◄─────────────────┤ access + refresh + id_token         │
+    │                 ├─────────────────►│ GET /oauth/jwks                     │
+    │                 │◄─────────────────┤ { keys } — verifies the signature   │
+    │  signed in      │ checks nonce     │                  │                  │
+    │◄────────────────┤                  │                  │                  │
 ```
 
-**2. Register a client and a user**
+1. **The client starts it.** It generates `state`, `nonce` and a PKCE
+   `code_verifier`, keeps them in an httpOnly cookie, and redirects the
+   browser to `/oauth/authorize` with only the verifier's hash.
+2. **The authorization side validates the request** — known client, a
+   `redirect_uri` registered for it *exactly*, PKCE present, scopes allowed
+   — stores it, and sends the browser to the login app with nothing but an
+   `interaction` id.
+3. **The person signs in on the login app.** It shows which client is
+   asking and for what. Its server side checks the credentials against
+   `POST /users/verify`, then tells the authorization side who signed in
+   (`POST /oauth/interactions/:id/accept`, behind the provider key).
+   Neither the client nor the authorization side sees the password.
+4. **The authorization side issues a one-time code**, and the browser is
+   sent back to the client's `redirect_uri` with `code` and `state`.
+5. **The client checks `state`**, then exchanges the code server to server,
+   with its secret and the `code_verifier`. The server checks the code is
+   unused and unexpired, was issued to this client, for this
+   `redirect_uri`, and that the verifier hashes to the stored challenge.
+6. **The client verifies the ID token** — first its RS256 signature,
+   against the public key from `GET /oauth/jwks` (picked by the `kid` in
+   the token header), then the issuer, audience, expiry and the `nonce` it
+   generated — and knows who signed in.
 
-The server has no clients until you create one. Use the admin key from
-`.env` to register a client, then sign a user up under it:
+From there the session belongs to the authorization side. The identity
+side vouched for the person once and is never asked again: a refresh
+checks only the authorization side's own record, and every session has a
+fixed end (30 days from sign-in, never extended by rotation) that sends
+the person back through the login app.
+
+What each check buys:
+
+| Check | Stops |
+| --- | --- |
+| `redirect_uri` exact match | a code being delivered to an attacker's URL |
+| `state` | a forged callback logging you into someone else's session (CSRF) |
+| PKCE | a code intercepted on its way back being exchanged by anyone else |
+| single-use code | a code being replayed |
+| ID token signature (JWKS, RS256 only) | a forged or altered ID token — including one that claims `alg: none` |
+| `nonce` | an ID token from another sign-in being replayed |
+| secret only in server code | the client's identity leaking through the browser |
+
+## Running it with Docker
+
+[docker-compose.yml](docker-compose.yml) builds and connects the three
+projects plus MongoDB. Each project keeps its own `Dockerfile`; the compose
+reads each project's `.env` and only overrides the addresses that change
+inside Docker (containers call each other by service name, while everything
+the browser follows stays on `localhost`).
+
+```bash
+for p in auth-server auth-front client-front; do cp $p/.env.example $p/.env; done
+docker compose up -d --build
+```
+
+The `.env.example` values already agree with each other, so the copies work
+as they are for a local run. The first start writes the signing keys to
+`auth-server/src/secrets/` (mounted, never baked into an image). MongoDB is
+published on **27017**, the port every `.env` expects — change it in the
+compose if a local instance already owns that port.
+
+Running only the database is enough to work on the servers themselves:
+`docker compose up -d mongo`, then `npm run start:dev` or `npm run dev` in
+each project.
+
+Then register a client and a person (step 3 below — same `curl`s), put the
+returned `client_id` and secret in `client-front/.env`, and recreate it:
+
+```bash
+docker compose up -d --force-recreate client-front
+```
+
+Open http://localhost:3001. `docker compose down -v` stops everything and
+wipes the database.
+
+Inside Docker the front ends run with `NODE_ENV=production`, so the
+client's cookies are `Secure`: Chrome, Edge and Firefox accept that on
+`http://localhost`, Safari does not.
+
+## Running it without Docker
+
+**1. MongoDB**, however you like — one database, five collections.
+
+**2. The server:**
+
+```bash
+cd auth-server && cp .env.example .env && npm i
+npm run generate-signing-keys                    # first time
+npm run start:dev                                # :3000
+```
+
+`ADMIN_API_KEY` is the provider's own credential: it registers clients and
+opens `/users/verify` and the interaction endpoints. `auth-front` presents
+the same value as `AUTH_SERVER_ADMIN_KEY`.
+
+**3. A client and a person:**
 
 ```bash
 curl -X POST http://localhost:3000/clients \
   -H "x-admin-key: $ADMIN_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name":"auth-provider","allowedScopes":["read","write"]}'
+  -d '{"name":"Demo client","allowedScopes":["openid","read","write"],
+       "redirectUris":["http://localhost:3001/api/auth/callback",
+                       "http://localhost:9999/callback"]}'
 
 curl -X POST http://localhost:3000/users/signup \
-  -u "<client_id>:<client_secret>" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d '{"email":"alice@example.com","password":"correct-horse-battery-staple"}'
 ```
 
-Full endpoint documentation: http://localhost:3000/docs
+`openid` is what earns an ID token. The second redirect URI is only for the
+by-hand walkthrough below.
 
-**3. Start the provider**
-
-Put the `client_id` and `client_secret` from step 2 in
-`auth-provider/.env`:
+**4. The two front ends:**
 
 ```bash
-cd auth-provider
-cp .env.example .env          # then fill OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET
-npm i
-npm run dev                   # http://localhost:3001
+cd auth-front    && cp .env.example .env && npm i && npm run dev   # :3003
+cd client-front  && cp .env.example .env                           # fill OAUTH_CLIENT_ID / _SECRET
+npm i && npm run dev                                               # :3001
 ```
 
-Sign in with the user from step 2. The page shows the scope, the token
-lifetime and the access token itself.
+Open http://localhost:3001 and click **Sign in with the provider**.
 
-## What happens when you submit that form
+## The same flow by hand, with Postman
 
-```
-browser ──POST /api/login──► auth-provider (route handler, server side)
-                                   │  Authorization: Basic client_id:client_secret
-                                   ▼
-                             POST /oauth/token   grant_type=password
-                                   │
-                             { access_token, refresh_token, expires_in, scope }
+Useful to see each hop. Generate a PKCE pair:
+
+```bash
+node -e "const c=require('crypto');const v=c.randomBytes(32).toString('base64url');console.log('verifier ',v);console.log('challenge',c.createHash('sha256').update(v).digest('base64url'))"
 ```
 
-Three properties of that hop are deliberate:
+1. Open in a browser:
+   `http://localhost:3000/oauth/authorize?response_type=code&client_id=<id>&redirect_uri=http://localhost:9999/callback&scope=openid%20read&state=abc&nonce=xyz&code_challenge=<challenge>&code_challenge_method=S256`
+2. Sign in on the provider's page.
+3. The browser lands on `localhost:9999/callback?code=…&state=abc`. Nothing
+   listens there, so the page fails — **the code is in the address bar**.
+   It expires in two minutes.
+4. In Postman: `POST http://localhost:3000/oauth/token`, Basic auth with
+   the client credentials, `x-www-form-urlencoded` body:
+   `grant_type=authorization_code`, `code`, `redirect_uri` (the same one),
+   `code_verifier`.
 
-- **The client secret never reaches the browser.** That is the only reason
-  the provider has a server side at all: a browser cannot keep a secret.
-- **The server's error body is not forwarded.** The token endpoint answers
-  `invalid_grant` for an unknown email and a wrong password alike, so the
-  form cannot be used to find out which emails exist.
-- **The refresh token stops at the route handler.** It outlives the access
-  token, so handing it to a browser would turn a leak into a lasting one.
-
-## A caveat worth stating
-
-The form uses the **Resource Owner Password Credentials** grant, which is
-discouraged today and removed in OAuth 2.1: the client sees the user's
-password, which is exactly what OAuth exists to avoid. It is here because
-it is the shortest honest path from a form to a token, and because seeing
-the problem is the point.
-
-The fix is `authorization_code` with PKCE — the user authenticates against
-the *server*, and the provider only ever receives a code. The last diagram
-in `docs/diagrams/` shows what that would change, what is already built
-for it, and what is missing.
+Postman can also run all of it for you (Authorization tab → OAuth 2.0 →
+*Authorization Code (With PKCE)*) if its callback URL is registered on the
+client.
 
 ## Layout
 
 ```
-auth-server/     NestJS · MongoDB · Redis · its own CLAUDE.md and rules
-auth-provider/   Next.js · its own CLAUDE.md, illustrative only
-docs/diagrams/   one diagram per grant
+docker-compose.yml   the whole stack: MongoDB + the three projects
+client-front/        Next.js · the OAuth client · illustrative only
+auth-front/          Next.js · the provider's login app
+auth-server/         NestJS · MongoDB · /oauth and /users · its own CLAUDE.md and rules
 ```
 
-Each folder is an independent project with its own conventions. No
-development methodology is prescribed by this repo.
-
-**Both projects are deliberately light.** No tests, no linter, no Docker,
-no git hooks, no migrations — only what it takes to read the OAuth flow
-and run it. Whatever you build on top of this will want most of that back.
-
-That goes double for `auth-provider`: it exists to show where the client
-secret lives, not how to structure a frontend. For a production-shaped
-one — layered architecture, state management, testing and tooling — look
-at the author's `next-core` template instead.
+**All three are deliberately light.** No tests, no linter, no git hooks, no
+migrations — only what it takes to read the flow and run it. Docker is
+there only to run the stack. The two front ends in particular show where
+secrets live, not how to structure a frontend: for a production-shaped one,
+see the author's `next-core` template.

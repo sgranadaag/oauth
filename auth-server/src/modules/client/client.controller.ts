@@ -19,6 +19,7 @@ export class ClientController {
     const { client, plainSecret } = await this.clientService.create(
       dto.name,
       dto.allowedScopes,
+      dto.redirectUris ?? [],
     );
     return ClientResponseDto.fromEntity(client, plainSecret);
   }

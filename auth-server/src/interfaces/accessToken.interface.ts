@@ -11,8 +11,3 @@ export interface SignAccessTokenOptions {
   audience: string;
   expiresInSeconds: number;
 }
-
-export interface VerifyAccessTokenOptions {
-  issuer: string;
-  audience: string;
-}

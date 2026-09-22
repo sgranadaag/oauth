@@ -1,0 +1,154 @@
+:root {
+  --color-bg: #f8fafc;
+  --color-card: #ffffff;
+  --color-surface: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-primary: #2563eb;
+  --color-danger: #dc2626;
+
+  --radius: 0.5rem;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+.layout {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-lg);
+}
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 6px rgb(0 0 0 / 5%);
+  max-width: 420px;
+  padding: var(--space-lg);
+  width: 100%;
+}
+
+.card__title {
+  margin: 0 0 var(--space-sm);
+}
+
+.card__description {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin: 0 0 var(--space-lg);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.form__label {
+  font-size: 0.875rem;
+  margin-bottom: var(--space-xs);
+}
+
+.form__input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm);
+}
+
+.form__input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.form__submit {
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius);
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.form__submit:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.message--error {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+.session {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  margin: var(--space-lg) 0 0;
+  padding: var(--space-md);
+}
+
+.session__title {
+  font-weight: 600;
+  margin-bottom: var(--space-sm);
+}
+
+.session__item {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  margin: 0 0 var(--space-xs);
+}
+
+.session__item--token {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* A different accent from the client on purpose: the person should be able to
+   see they have left the application and are now on the provider's page. */
+.provider {
+  --color-primary: #16a34a;
+  --color-bg: #f0fdf4;
+}
+
+.scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  list-style: none;
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+}
+
+.scopes__item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.card__footnote {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  margin: var(--space-lg) 0 0;
+}

@@ -12,8 +12,8 @@ export function mongoConfig(
     autoLoadEntities: true,
     // On MongoDB this is not the destructive schema sync it is on Postgres:
     // collections are schemaless, so TypeORM only creates the declared indexes
-    // (`@Index`). There are no migrations for Mongo, and the unique index
-    // behind "one email per client" has to come from somewhere.
+    // (`@Index`) of the entities registered here: `clients`, `tokens`,
+    // `authorization_requests`, `authorization_codes` and `users`.
     synchronize: true,
   };
 }

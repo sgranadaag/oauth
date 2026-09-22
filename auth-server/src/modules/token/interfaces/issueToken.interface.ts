@@ -5,8 +5,10 @@ export interface IssueTokenInput {
   userId?: string;
   // Already resolved by the caller — this module mints what it is told to.
   scope: string;
-  // Set when rotating, to keep the new token in the session it replaces.
+  // Both set when rotating, to keep the new token in the session it replaces
+  // and inside that session's fixed end.
   sessionId?: string;
+  sessionExpiresAt?: Date;
 }
 
 export interface IssuedTokens {
@@ -14,4 +16,12 @@ export interface IssuedTokens {
   expiresInSeconds: number;
   scope: string;
   refreshToken?: string;
+  idToken?: string;
+}
+
+export interface IssueIdTokenInput {
+  clientId: string;
+  userId: string;
+  email: string;
+  nonce?: string;
 }

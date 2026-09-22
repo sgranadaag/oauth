@@ -11,6 +11,7 @@ export class ClientService {
   async create(
     name: string,
     allowedScopes: string[],
+    redirectUris: string[],
   ): Promise<CreateClientResult> {
     const clientSecret = randomUUID();
 
@@ -19,6 +20,7 @@ export class ClientService {
     client.clientSecret = clientSecret;
     client.name = name;
     client.allowedScopes = allowedScopes;
+    client.redirectUris = redirectUris;
 
     const saved = await this.clientRepository.save(client);
 

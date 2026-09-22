@@ -1,12 +1,13 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { ENV } from '@constants/environment.constant';
+import { constantTimeEquals } from '@utils/string.util';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -15,14 +16,14 @@ export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const configuredKey = this.configService.get<string>(ENV.ADMIN_API_KEY);
     if (!configuredKey) {
-      throw new UnauthorizedException('Admin credential is not configured');
+      throw new ForbiddenException('Admin credential is not configured');
     }
 
     const request = context.switchToHttp().getRequest<Request>();
     const providedKey = request.header('x-admin-key');
 
-    if (!providedKey || providedKey !== configuredKey) {
-      throw new UnauthorizedException('Invalid admin credential');
+    if (!providedKey || !constantTimeEquals(providedKey, configuredKey)) {
+      throw new ForbiddenException('Invalid admin credential');
     }
 
     return true;

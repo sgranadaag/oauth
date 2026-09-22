@@ -1,4 +1,4 @@
-import { createPrivateKey } from 'node:crypto';
+import { createHash, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JwkSet } from '@interfaces/jwks.interface';
@@ -10,7 +10,8 @@ const SECRETS_DIR = join(process.cwd(), 'src', 'secrets');
 
 let privateKeyPem: string | undefined;
 let publicKeyPem: string | undefined;
-let signingJwks: JwkSet | undefined;
+let signingKeyId: string | undefined;
+let publicJwks: JwkSet | undefined;
 
 /**
  * Reads the private signing key from `src/secrets/private.pem`.
@@ -42,29 +43,51 @@ export function getPublicKeyPem(): string {
 }
 
 /**
- * Derives the JSON Web Key Set for the signing key.
+ * The signing key's id, `kid`: its RFC 7638 JWK thumbprint.
  *
- * The PEM on disk stays the single source of truth; the JWK form is derived in
- * memory and cached. `alg` and `use` are optional for RSA keys but set anyway,
- * to keep the key single-purpose.
+ * SHA-256 over the key's required members (`e`, `kty`, `n`) serialised in
+ * lexicographic order with no whitespace. Derived from the key itself, so it
+ * changes exactly when the key does, and a verifier can pick the right key
+ * out of the JWK Set without anyone assigning ids by hand. Cached after the
+ * first call.
  *
- * **Nothing calls this yet**: it is derived from the *private* key, so a JWKS
- * endpoint publishing it must strip the private half (`d`, `p`, `q`, `dp`,
- * `dq`, `qi`) and add a `kid` first. It is kept because verification currently
- * needs `public.pem` locally, and a third party will need this over HTTP.
- *
- * @returns A JWK Set holding the single RS256 signing key, private half included.
- * @throws If `src/secrets/private.pem` does not exist or is not a valid RSA key.
+ * @returns The base64url-encoded thumbprint.
+ * @throws If `src/secrets/public.pem` does not exist or is not a valid RSA key.
  */
-export function getSigningJwks(): JwkSet {
-  signingJwks ??= {
+export function getSigningKeyId(): string {
+  if (!signingKeyId) {
+    const { e, kty, n } = createPublicKey(getPublicKeyPem()).export({
+      format: 'jwk',
+    });
+    signingKeyId = createHash('sha256')
+      .update(JSON.stringify({ e, kty, n }))
+      .digest('base64url');
+  }
+  return signingKeyId;
+}
+
+/**
+ * The JSON Web Key Set (RFC 7517) a verifier fetches: the signing key's
+ * public half, and nothing else.
+ *
+ * Derived from `public.pem`, never from the private key, so no private member
+ * (`d`, `p`, `q`, `dp`, `dq`, `qi`) can ever reach it. `kid` matches the
+ * header of every token this server signs; `alg` and `use` pin the key to
+ * RS256 signatures. Cached after the first call.
+ *
+ * @returns A JWK Set holding the single public RS256 signing key.
+ * @throws If `src/secrets/public.pem` does not exist or is not a valid RSA key.
+ */
+export function getPublicJwks(): JwkSet {
+  publicJwks ??= {
     keys: [
       {
-        ...createPrivateKey(getPrivateKeyPem()).export({ format: 'jwk' }),
+        ...createPublicKey(getPublicKeyPem()).export({ format: 'jwk' }),
+        kid: getSigningKeyId(),
         alg: SIGNING_ALGORITHM,
         use: 'sig',
       },
     ],
   };
-  return signingJwks;
+  return publicJwks;
 }

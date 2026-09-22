@@ -1,20 +1,25 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ENV } from '@constants/environment.constant';
-import { signAccessToken } from '@utils/jwt.util';
+import { signAccessToken, signIdToken } from '@utils/jwt.util';
+import { createRandomValue } from '@utils/random.util';
+import { secondsFromNow } from '@utils/time.util';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   DEFAULT_AUDIENCE,
   DEFAULT_ISSUER,
+  ID_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_BYTES,
   REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_TYPE,
+  SESSION_TTL_SECONDS,
 } from '@modules/token/token.constants';
 import { TokenEntity } from '@modules/token/token.entity';
 import { TokenRepository } from '@modules/token/token.repository';
 import type {
   IssuedTokens,
+  IssueIdTokenInput,
   IssueTokenInput,
 } from '@modules/token/interfaces/issueToken.interface';
 
@@ -33,6 +38,7 @@ export class TokenService {
     userId,
     scope,
     sessionId,
+    sessionExpiresAt,
   }: IssueTokenInput): Promise<IssuedTokens> {
     const accessToken = signAccessToken(
       // No user means the client itself is the subject, as RFC 9068 §5 expects
@@ -59,10 +65,27 @@ export class TokenService {
         userId,
         scope,
         sessionId,
+        sessionExpiresAt,
       });
     }
 
     return issued;
+  }
+
+  // A statement about who signed in, addressed to the client. The caller
+  // decides whether one is owed (the `openid` scope is an OpenID Connect rule,
+  // not this module's); this only mints it.
+  issueIdToken({ clientId, userId, email, nonce }: IssueIdTokenInput): string {
+    const nonceClaim = nonce ? { nonce } : {};
+
+    return signIdToken(
+      { sub: userId, email, ...nonceClaim },
+      {
+        issuer: this.issuer(),
+        clientId,
+        expiresInSeconds: ID_TOKEN_TTL_SECONDS,
+      },
+    );
   }
 
   private async issueRefreshToken({
@@ -70,20 +93,32 @@ export class TokenService {
     userId,
     scope,
     sessionId,
+    sessionExpiresAt,
   }: {
     clientId: string;
     userId: string;
     scope: string;
     sessionId?: string;
+    sessionExpiresAt?: Date;
   }): Promise<string> {
+    const sessionEnd = sessionExpiresAt ?? secondsFromNow(SESSION_TTL_SECONDS);
+
     const token = new TokenEntity();
-    token.id = randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
+    token.id = createRandomValue(REFRESH_TOKEN_BYTES);
     token.type = REFRESH_TOKEN_TYPE;
     token.clientId = clientId;
     token.userId = userId;
     token.sessionId = sessionId ?? randomUUID();
+    token.sessionExpiresAt = sessionEnd;
     token.scope = scope;
-    token.expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000);
+    // Rotation renews the token, never the session: no token outlives the
+    // session's fixed end.
+    token.expiresAt = new Date(
+      Math.min(
+        secondsFromNow(REFRESH_TOKEN_TTL_SECONDS).getTime(),
+        sessionEnd.getTime(),
+      ),
+    );
     token.consumedAt = null;
 
     await this.tokenRepository.save(token);

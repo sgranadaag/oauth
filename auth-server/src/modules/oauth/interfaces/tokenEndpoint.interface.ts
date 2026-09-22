@@ -11,11 +11,12 @@ export interface TokenRequestParams {
   [param: string]: string | undefined;
 }
 
-// RFC 6749 §5.1.
+// RFC 6749 §5.1, plus OpenID Connect's `id_token` when `openid` was granted.
 export interface TokenResponse {
   access_token: string;
   expires_in: number;
   token_type: string;
   scope: string;
   refresh_token?: string;
+  id_token?: string;
 }

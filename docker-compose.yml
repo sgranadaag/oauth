@@ -1,0 +1,77 @@
+# The whole stack: MongoDB and the four projects, each built from its own
+# Dockerfile. Secrets and keys come from each project's .env (copy
+# .env.example first). Only the addresses that change inside Docker are
+# overridden here: container-to-container calls use service names, while
+# everything the browser follows (issuer, redirect URIs, the login page)
+# stays on localhost, because the browser runs on the host.
+
+name: oauth
+
+services:
+  mongo:
+    image: mongo:8
+    # The port every .env expects, so the servers reach it whether they run
+    # here or on the host. Change the left side if a local MongoDB owns it.
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # # Writes auth-server/src/secrets/*.pem once, if they are not there yet, and
+  # # exits. The keys stay on the host and are mounted, never baked into an image.
+  # signing-keys:
+  #   build:
+  #     context: ./auth-server
+  #     target: build
+  #   command: sh -c "test -f src/secrets/private.pem || npm run generate-signing-keys"
+  #   volumes:
+  #     - ./auth-server/src/secrets:/app/src/secrets
+
+
+  # auth-server:
+  #   build: ./auth-server
+  #   env_file: ./auth-server/.env
+  #   environment:
+  #     MONGO_URI: mongodb://mongo:27017
+  #     # Browser-facing, so unchanged: OIDC_ISSUER and AUTH_FRONT_URL.
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./auth-server/src/secrets:/app/src/secrets:ro
+  #   depends_on:
+  #     mongo:
+  #       condition: service_healthy
+  #     signing-keys:
+  #       condition: service_completed_successfully
+
+  # # The login app: its server side calls the auth server by name.
+  # auth-front:
+  #   build: ./auth-front
+  #   env_file: ./auth-front/.env
+  #   environment:
+  #     AUTH_SERVER_URL: http://auth-server:3000
+  #   ports:
+  #     - "3003:3003"
+  #   depends_on:
+  #     - auth-server
+
+  # # The token exchange goes to the auth server by name; the authorize redirect
+  # # sends the browser to the published port.
+  # client-front:
+  #   build: ./client-front
+  #   env_file: ./client-front/.env
+  #   environment:
+  #     AUTH_SERVER_URL: http://auth-server:3000
+  #     AUTH_SERVER_PUBLIC_URL: http://localhost:3000
+  #   ports:
+  #     - "3001:3001"
+  #   depends_on:
+  #     - auth-server
+
+volumes:
+  mongo-data:

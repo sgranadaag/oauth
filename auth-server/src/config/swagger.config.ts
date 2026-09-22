@@ -5,16 +5,17 @@ export const SWAGGER_PATH = 'docs';
 
 export const ADMIN_KEY_SECURITY = 'adminKey';
 export const CLIENT_BASIC_SECURITY = 'clientBasic';
-export const BEARER_SECURITY = 'bearer';
 
 export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
     .setTitle('OAuth 2.0 Authorization Server')
     .setDescription(
-      'RFC 6749 authorization server, implemented from scratch. The token ' +
-        'endpoint serves the Resource Owner Password Credentials and OTP ' +
-        'grants today; Client Credentials and Refresh Token are not ' +
-        'implemented yet.',
+      'RFC 6749 authorization server and OpenID Connect provider, ' +
+        'implemented from scratch. The token endpoint serves the ' +
+        'Authorization Code (with PKCE), Client Credentials and Refresh Token ' +
+        'grants. `/users` is the identity side — the accounts and their ' +
+        'password hashes — and nothing in `/oauth` calls it: the login app ' +
+        'does, and then presents the result.',
     )
     .setVersion('1.0')
     .addApiKey(
@@ -22,7 +23,10 @@ export function setupSwagger(app: INestApplication): void {
         type: 'apiKey',
         name: 'x-admin-key',
         in: 'header',
-        description: 'Bootstrap admin credential (ADMIN_API_KEY).',
+        description:
+          'The provider credential (ADMIN_API_KEY): registering clients, the ' +
+          'interaction endpoints and checking credentials. The login app ' +
+          'presents it too.',
       },
       ADMIN_KEY_SECURITY,
     )
@@ -35,17 +39,6 @@ export function setupSwagger(app: INestApplication): void {
           'token endpoint accepts.',
       },
       CLIENT_BASIC_SECURITY,
-    )
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description:
-          'An access token issued by this server. Verified offline against ' +
-          'the published public key.',
-      },
-      BEARER_SECURITY,
     )
     .build();
 

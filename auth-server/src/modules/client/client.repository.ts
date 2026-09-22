@@ -14,7 +14,8 @@ export class ClientRepository {
     return this.typeOrmRepository.save(client);
   }
 
-  findByClientId(clientId: string): Promise<ClientEntity | null> {
+  async findByClientId(clientId?: string): Promise<ClientEntity | null> {
+    if (!clientId) return null
     return this.typeOrmRepository.findOneBy({ id: clientId });
   }
 }

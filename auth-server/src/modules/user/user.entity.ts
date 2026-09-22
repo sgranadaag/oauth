@@ -7,11 +7,10 @@ import {
   ObjectIdColumn,
 } from 'typeorm';
 
-// No relation to ClientEntity: TypeORM has no joins on MongoDB, so the parent
-// is the `clientId` string and nothing else. The compound index is what makes
-// an email unique *per client* rather than globally.
+// A person exists once, whichever application they sign in to: the email is
+// unique across the whole provider, and no client appears here — which clients
+// a person uses belongs to the oauth side, not to identity.
 @Entity('users')
-@Index(['clientId', 'email'], { unique: true })
 export class UserEntity {
   @ObjectIdColumn()
   _id: ObjectId;
@@ -20,9 +19,7 @@ export class UserEntity {
   @Column()
   id: string;
 
-  @Column()
-  clientId: string;
-
+  @Index({ unique: true })
   @Column()
   email: string;
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { isExpired } from '@utils/time.util';
 import { ClientEntity } from '@modules/client/client.entity';
-import { UserRepository } from '@modules/user/user.repository';
 import { REFRESH_TOKEN_TYPE } from '@modules/token/token.constants';
 import { TokenEntity } from '@modules/token/token.entity';
 import { TokenRepository } from '@modules/token/token.repository';
@@ -18,7 +18,6 @@ import type {
 export class RefreshTokenGrantService implements GrantHandler {
   constructor(
     private readonly tokenRepository: TokenRepository,
-    private readonly userRepository: UserRepository,
     private readonly scopeService: ScopeService,
     private readonly tokenService: TokenService,
   ) {}
@@ -45,11 +44,16 @@ export class RefreshTokenGrantService implements GrantHandler {
       // set: a refresh must not hand back more than the session had.
       scope: this.scopeService.narrow(token.scope, params.scope),
       sessionId: token.sessionId,
+      sessionExpiresAt: token.sessionExpiresAt,
     });
   }
 
   // Every failure is the same `invalid_grant`, so a caller cannot tell an
   // unknown token from someone else's or from an expired one.
+  //
+  // Everything checked here is this server's own record. Whether the person
+  // is still allowed in is not asked of anyone: the identity side vouched for
+  // them at sign-in, and the session's fixed end sends them back to it.
   private async validate(
     clientId: string,
     presented: string,
@@ -72,15 +76,8 @@ export class RefreshTokenGrantService implements GrantHandler {
       throw new OauthException(OAUTH_ERRORS.INVALID_GRANT, 'invalid grant');
     }
 
-    if (token.expiresAt.getTime() <= Date.now()) {
-      throw new OauthException(OAUTH_ERRORS.INVALID_GRANT, 'invalid grant');
-    }
-
-    // Deleting a user has to end their sessions, and this is the only place
-    // that can notice: the access tokens already issued are verified offline.
-    const user = await this.userRepository.findById(token.userId);
-    if (!user) {
-      await this.tokenRepository.deleteBySessionId(token.sessionId);
+    // `expiresAt` never goes past the session's end, so this covers both.
+    if (isExpired(token.expiresAt)) {
       throw new OauthException(OAUTH_ERRORS.INVALID_GRANT, 'invalid grant');
     }
 

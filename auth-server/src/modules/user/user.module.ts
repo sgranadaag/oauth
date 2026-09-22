@@ -1,16 +1,17 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ClientModule } from '../client/client.module';
-import { BasicTokenGuard } from '@guards/basicToken.guard';
-import { UserEntity } from './user.entity';
-import { UserController } from './user.controller';
-import { UserRepository } from './user.repository';
-import { UserService } from './user.service';
+import { UserEntity } from '@modules/user/user.entity';
+import { UserController } from '@modules/user/user.controller';
+import { UserRepository } from '@modules/user/user.repository';
+import { UserService } from '@modules/user/user.service';
 
 @Module({
-  imports: [ClientModule, TypeOrmModule.forFeature([UserEntity])],
+  imports: [TypeOrmModule.forFeature([UserEntity])],
   controllers: [UserController],
-  providers: [UserRepository, UserService, BasicTokenGuard],
-  exports: [UserRepository],
+  providers: [UserRepository, UserService],
 })
+// Deliberately exports nothing: the oauth module never asks this one about a
+// person. It learns who signed in from the login app's `accept`, which the
+// login app builds by calling `/users/verify` from outside. Same process,
+// same database, no call between the two.
 export class UserModule {}

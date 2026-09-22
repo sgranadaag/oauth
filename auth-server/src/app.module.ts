@@ -2,12 +2,10 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { mongoConfig } from '@config/mongo.config';
-import { redisConfig } from '@config/redis.config';
-import { RedisModule } from '@global/redis/redis.module';
 import { RequestLoggerMiddleware } from '@middlewares/requestLogger.middleware';
 import { ClientModule } from './modules/client/client.module';
-import { UserModule } from './modules/user/user.module';
 import { OauthModule } from './modules/oauth/oauth.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -17,14 +15,9 @@ import { OauthModule } from './modules/oauth/oauth.module';
       inject: [ConfigService],
       useFactory: mongoConfig,
     }),
-    RedisModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: redisConfig,
-    }),
     ClientModule,
-    UserModule,
     OauthModule,
+    UserModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -3,9 +3,9 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  ObjectId,
   ObjectIdColumn,
 } from 'typeorm';
+import type { ObjectId } from 'mongodb';
 
 // One document per refresh token issued. `id` *is* the value handed to the
 // client: 256 bits of randomness, so the lookup is an indexed read and there is

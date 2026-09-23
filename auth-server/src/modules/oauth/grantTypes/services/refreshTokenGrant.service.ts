@@ -45,6 +45,7 @@ export class RefreshTokenGrantService implements GrantHandler {
       scope: this.scopeService.narrow(token.scope, params.scope),
       sessionId: token.sessionId,
       sessionExpiresAt: token.sessionExpiresAt,
+      accessTokenTtlSeconds: client.accessTokenTtlSeconds ?? undefined,
     });
   }
 

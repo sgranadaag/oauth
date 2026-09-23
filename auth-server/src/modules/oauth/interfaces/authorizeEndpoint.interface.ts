@@ -12,6 +12,9 @@ export interface AuthorizeQuery {
   nonce?: string;
   code_challenge?: string;
   code_challenge_method?: string;
+  // Not an RFC parameter: which identity provider should authenticate the
+  // person. A key of `IDENTITY_PROVIDERS`; absent means the default one.
+  idp?: string;
 }
 
 // What the login page shows while the person decides: who is asking, for what.

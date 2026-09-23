@@ -38,6 +38,7 @@ export class AuthorizationCodeGrantService implements GrantHandler {
       clientId: client.id,
       userId: authorization.userId,
       scope: authorization.scope,
+      accessTokenTtlSeconds: client.accessTokenTtlSeconds ?? undefined,
     });
 
     // OpenID Connect Core §3.1.3.3: an ID token is owed only when the person

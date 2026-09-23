@@ -76,8 +76,12 @@ reverse. The boundaries that carry most of the design:
 
 ## How it talks to the others
 
-- **From the browser**: `GET /oauth/authorize`, then a redirect to
-  `AUTH_FRONT_URL/login?interaction=…`.
+- **From the browser**: `GET /oauth/authorize`, then a redirect to the
+  sign-in page of the identity provider the request named, with
+  `?interaction=…`. The `idp` parameter picks one of `IDENTITY_PROVIDERS`
+  (`local` by default) and each entry reads its URL from the environment,
+  so adding a provider is a constant plus a variable — not a change in
+  the flow, and not a field on the client.
 - **From auth-front's server side**: `POST /users/verify` first, then
   `GET /oauth/interactions/:id` and `POST /oauth/interactions/:id/accept`,
   all three with `ADMIN_API_KEY` in `x-admin-key`. The login app names
@@ -88,7 +92,8 @@ reverse. The boundaries that carry most of the design:
 - **Out of this server**: nothing. It calls no other service.
 - **From the client**: `POST /oauth/token` with Basic
   `client_id:client_secret`, server to server; then `GET /oauth/jwks`
-  to verify the ID token's signature.
+  to verify the ID token's signature; and `POST /oauth/revoke` when
+  someone signs out of it.
 - **From anyone**: `GET /oauth/jwks`, open on purpose — the public half
   of the signing key, derived from `public.pem` only, with the same `kid`
   every token carries in its header.

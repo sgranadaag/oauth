@@ -154,9 +154,12 @@ the first one to drift.
   Nothing derives or decodes it.
 - **A session ends by deleting its refresh tokens**, all of them, by
   `sessionId` — or on its own at its fixed end. Deleting happens today on
-  reuse of a consumed token; a revocation endpoint (RFC 7009, or by
-  `subject` for the identity side to push), when it is added, does the
-  same.
+  reuse of a consumed token and on `POST /oauth/revoke` (RFC 7009), which
+  a client calls when someone signs out. **Revoking answers 200 either
+  way** — for an unknown token and for another client's — or it would be
+  an oracle for guessing tokens. A revocation by `subject`, for the
+  identity side to push, would end a session the same way — it is not
+  written yet.
 - **A session has a fixed end, and rotation never moves it.**
   `sessionExpiresAt` is set once, at sign-in, and copied onto every
   rotated token; each token's `expiresAt` is capped at it. A sliding
@@ -171,6 +174,20 @@ the first one to drift.
   there keeps a live session until its fixed end, or until the identity
   side asks for a revocation by `subject` (not written yet). Access
   tokens already issued still verify until `exp` either way.
+
+## `ObjectId` comes from `mongodb`, not from `typeorm`
+
+TypeORM 1.1 stopped re-exporting `ObjectId` from its root (it lives in
+`typeorm/driver/mongodb/typings`), so `import { ObjectId } from 'typeorm'`
+is a TS2305. Every entity imports the real one instead:
+
+```ts
+import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
+import type { ObjectId } from 'mongodb';
+```
+
+`mongodb` is already a direct dependency, and this is the type the driver
+actually stores — don't patch or re-declare the library's types for it.
 
 ## Express 5 route patterns
 

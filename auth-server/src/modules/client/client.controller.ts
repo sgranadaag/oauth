@@ -16,11 +16,14 @@ export class ClientController {
   @UseGuards(AdminGuard)
   @Post()
   async create(@Body() dto: CreateClientDto): Promise<ClientResponseDto> {
-    const { client, plainSecret } = await this.clientService.create(
-      dto.name,
-      dto.allowedScopes,
-      dto.redirectUris ?? [],
-    );
+    const { client, plainSecret } = await this.clientService.create({
+      name: dto.name,
+      allowedScopes: dto.allowedScopes,
+      redirectUris: dto.redirectUris ?? [],
+      grantTypes: dto.grantTypes,
+      accessTokenTtlSeconds: dto.accessTokenTtlSeconds,
+    });
+
     return ClientResponseDto.fromEntity(client, plainSecret);
   }
 }

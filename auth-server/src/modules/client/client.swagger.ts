@@ -41,6 +41,24 @@ export const CLIENT_PROPERTY_SWAGGER = {
     example: ['http://localhost:3001/api/auth/callback'],
     type: [String],
   },
+  GRANT_TYPES: {
+    description:
+      'Which grants this client may use (RFC 7591 `grant_types`). Asking for ' +
+      'one it is not registered for is `unauthorized_client`. Defaults to ' +
+      '`["authorization_code", "refresh_token"]`, so a service that wants ' +
+      '`client_credentials` has to say so.',
+    example: ['authorization_code', 'refresh_token'],
+    type: [String],
+    required: false,
+  },
+  ACCESS_TOKEN_TTL_SECONDS: {
+    description:
+      'Lifetime of this client\'s access tokens, in seconds. Omit to use the ' +
+      "server default (3600). Minimum 60. It cannot be asked for per request: " +
+      'a token lifetime is policy, not a parameter.',
+    example: 900,
+    required: false,
+  },
   CLIENT_ID: {
     description: 'The OAuth `client_id`. Use it as the Basic auth username.',
     example: '3f2a9e10-6f1d-4a2b-9c3e-5d7a1b2c4e8f',

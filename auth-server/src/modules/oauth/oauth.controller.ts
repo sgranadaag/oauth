@@ -15,6 +15,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { SwaggerDocs } from '@decorators/swaggerDocs.decorator';
 import { BasicTokenGuard } from '@guards/basicToken.guard';
+import { GrantTypeGuard } from '@guards/grantType.guard';
 import { AdminGuard } from '@guards/admin.guard';
 import type { BasicTokenRequest } from '@interfaces/authenticatedRequest.interface';
 import type { JwkSet } from '@interfaces/jwks.interface';
@@ -30,6 +31,7 @@ import type {
   TokenRequestParams,
   TokenResponse,
 } from '@modules/oauth/interfaces/tokenEndpoint.interface';
+import type { RevokeRequestParams } from '@modules/oauth/interfaces/revokeEndpoint.interface';
 
 @ApiTags(OAUTH_SWAGGER.API_TAG)
 @Controller('oauth')
@@ -56,8 +58,8 @@ export class OauthController {
   @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_ACCEPT)
   @UseGuards(AdminGuard)
   @Post('interactions/:interactionId/accept')
-  @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
   acceptInteraction(
     @Param('interactionId') interactionId: string,
     @Body() dto: InteractionAcceptDto,
@@ -68,9 +70,21 @@ export class OauthController {
     });
   }
 
-  // Public by design, no guard: the public half of the signing key is exactly
-  // what anyone verifying a token needs. Cacheable, since it changes only
-  // when the key does — and then `kid` changes with it.
+  // RFC 7009. Same client credentials as the token endpoint, and the same
+  // `no-store`: the body carries a live credential on its way to being
+  // destroyed. No content comes back — 200 is the whole answer.
+  @SwaggerDocs(OAUTH_SWAGGER.REVOKE)
+  @UseGuards(BasicTokenGuard)
+  @Post('revoke')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async revoke(
+    @Req() request: BasicTokenRequest,
+    @Body() params: RevokeRequestParams,
+  ): Promise<void> {
+    await this.oauthService.revoke(request.client, params);
+  }
+
   @SwaggerDocs(OAUTH_SWAGGER.JWKS)
   @Get('jwks')
   @Header('Cache-Control', 'public, max-age=3600')
@@ -78,11 +92,8 @@ export class OauthController {
     return this.oauthService.jwks();
   }
 
-  // The client comes from the Basic credentials the guard verified, never from
-  // the body — a caller can only ever mint tokens for a client whose secret it
-  // holds. `no-store` is RFC 6749 §5.1: the body carries a live credential.
   @SwaggerDocs(OAUTH_SWAGGER.TOKEN)
-  @UseGuards(BasicTokenGuard)
+  @UseGuards(BasicTokenGuard, GrantTypeGuard)
   @Post('token')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')

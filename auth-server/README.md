@@ -16,8 +16,9 @@ signed in. See the root [README](../README.md) for the whole flow.
 | `GET /oauth/interactions/:id` | auth-front's server (`x-admin-key`) | Which client is asking, for which scopes |
 | `POST /oauth/interactions/:id/accept` | auth-front's server (`x-admin-key`) | Takes `{ subject, email }` — who signed in, already checked — issues a code, says where to send the browser |
 | `POST /oauth/token` | the client (Basic `client_id:client_secret`) | Every grant, dispatched on `grant_type` |
+| `POST /oauth/revoke` | the client (Basic `client_id:client_secret`) | Ends the session a refresh token belongs to (RFC 7009). 200 either way, so it is no oracle |
 | `GET /oauth/jwks` | anyone | The public signing key (JWK Set, RFC 7517), by `kid` — to verify ID and access tokens offline |
-| `POST /clients` | an admin (`x-admin-key`) | Registers a client with its scopes and redirect URIs; returns the secret once |
+| `POST /clients` | an admin (`x-admin-key`) | Registers a client with its scopes, redirect URIs, grants and token lifetime; returns the secret once |
 | `POST /users/signup` | anyone | Creates an account. The email is unique across the whole provider |
 | `POST /users/verify` | auth-front's server (`x-admin-key`) | Checks email + password, returns the user or 401 |
 | `GET /docs` | — | Swagger UI |
@@ -66,8 +67,11 @@ npm run generate-signing-keys # first time: writes src/secrets/*.pem
 npm run start:dev             # http://localhost:3000
 ```
 
-`AUTH_FRONT_URL` in `.env` is where `/oauth/authorize` sends the browser;
-`ADMIN_API_KEY` is the provider's own credential — it registers clients,
+`LOCAL_IDP_LOGIN_URL` is where the `local` identity provider signs people
+in; an authorization request picks a provider with `idp=<name>` and the
+server resolves it here, so another provider is one entry in
+`IDENTITY_PROVIDERS` plus its own variable. `ADMIN_API_KEY` is the
+provider's own credential — it registers clients,
 opens the interaction endpoints and `/users/verify`, and the login app
 presents it too. A wrong one is a **403**, never a 401, so a
 misconfiguration cannot pass for a wrong password.
@@ -80,7 +84,7 @@ src/modules/authorization/  pending authorization requests and one-time codes
 src/modules/token/          minting, storing and rotating tokens, sessions with a fixed end — knows no protocol
 src/modules/client/         registered clients, with their redirect URIs
 src/modules/user/           the accounts: signup and credential check — called by nothing above
-src/guards/                 Basic (client), admin key, login app key
+src/guards/                 Basic (client), admin key, grant allowed for this client
 src/utils/                  keys, JWT and ID token signing, PKCE, bcrypt, constant-time comparison
 ```
 

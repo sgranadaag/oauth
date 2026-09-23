@@ -94,6 +94,21 @@ checks only the authorization side's own record, and every session has a
 fixed end (30 days from sign-in, never extended by rotation) that sends
 the person back through the login app.
 
+**Renewing** is the second half, and `client-front` shows it: its page
+prints when the access token expires, and **Renew token** posts to its own
+`/api/auth/refresh`, which trades the refresh token for a new pair at
+`POST /oauth/token` — no browser, no person, just the client's secret. The
+provider rotates the refresh token on every use, so the value on screen
+changes too; presenting a spent one ends the whole session, on the
+assumption that a token used twice has been copied.
+
+**Signing out** ends it on both sides: `client-front` calls
+`POST /oauth/revoke` (RFC 7009) with the refresh token before dropping its
+own cookie, so the session dies at the provider too. The access token
+already issued keeps working until it expires — a JWT verified offline
+cannot be withdrawn, which is the trade-off for not asking the provider on
+every request.
+
 What each check buys:
 
 | Check | Stops |
@@ -166,7 +181,8 @@ curl -X POST http://localhost:3000/clients \
   -H "x-admin-key: $ADMIN_API_KEY" -H "Content-Type: application/json" \
   -d '{"name":"Demo client","allowedScopes":["openid","read","write"],
        "redirectUris":["http://localhost:3001/api/auth/callback",
-                       "http://localhost:9999/callback"]}'
+                       "http://localhost:9999/callback"],
+       "grantTypes":["authorization_code","refresh_token"]}'
 
 curl -X POST http://localhost:3000/users/signup \
   -H "Content-Type: application/json" \
@@ -174,7 +190,14 @@ curl -X POST http://localhost:3000/users/signup \
 ```
 
 `openid` is what earns an ID token. The second redirect URI is only for the
-by-hand walkthrough below.
+by-hand walkthrough below. `grantTypes` is what this client may use — the
+two above are the default, and a service wanting `client_credentials` has
+to ask for it. Add `"accessTokenTtlSeconds": 900` to give this client
+shorter access tokens than the server default.
+
+Where people sign in is not a client setting: `/oauth/authorize` takes an
+optional `idp` naming an identity provider (`local` by default), and the
+server resolves it to that provider's page from its own configuration.
 
 **4. The two front ends:**
 

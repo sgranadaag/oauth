@@ -9,6 +9,9 @@ export interface IssueTokenInput {
   // and inside that session's fixed end.
   sessionId?: string;
   sessionExpiresAt?: Date;
+  // The client's own access token lifetime, when its registration sets one.
+  // Absent means this server's default.
+  accessTokenTtlSeconds?: number;
 }
 
 export interface IssuedTokens {

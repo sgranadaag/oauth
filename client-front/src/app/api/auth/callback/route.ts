@@ -8,6 +8,11 @@ import type {
   TokenResponse,
 } from "@shared/auth.types";
 
+// How long this app's own session cookie lives. Longer than an access token,
+// so the refresh token inside it is still there to be used; shorter than the
+// provider's refresh window, so a dead session cleans itself up.
+const SESSION_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
+
 // GET /api/auth/callback — the browser comes back from the provider with
 // `code` and `state`, or with `error`. Everything below runs on this server.
 export const GET = async (request: NextRequest): Promise<NextResponse> => {
@@ -18,7 +23,12 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     OAUTH_CLIENT_SECRET = "",
     OAUTH_REDIRECT_URI = "http://localhost:3001/api/auth/callback",
   } = process.env;
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
+
+  // This app's own address. Taken from the redirect URI, never from
+  // `request.nextUrl.origin`: in a container Next builds that from the
+  // address it binds to, which is `0.0.0.0` — a URL no browser can follow.
+  const { origin } = new URL(OAUTH_REDIRECT_URI);
 
   // Every outcome ends on the home page, and the one-time transaction cookie goes.
   const finish = (error?: string): NextResponse => {
@@ -144,22 +154,26 @@ export const GET = async (request: NextRequest): Promise<NextResponse> => {
     return finish("sign_in_failed");
   }
 
-  // 5. Keep what the page may see in an httpOnly cookie. Never the refresh
-  //    token; the email comes from the ID token, which is what it is for.
+  // 5. Keep the session in an httpOnly cookie: the tokens, and when the
+  //    access token dies. The email comes from the ID token, which is what it
+  //    is for.
   const session: Session = {
     email: claims.email,
     scope: tokens.scope,
     accessToken: tokens.access_token,
-    expiresIn: tokens.expires_in,
+    refreshToken: tokens.refresh_token ?? "",
+    expiresAt: Date.now() + tokens.expires_in * 1000,
   };
 
   const response = finish();
+  // The cookie outlives the access token on purpose: it carries the refresh
+  // token, and a session that vanished at `expires_in` could never be renewed.
   response.cookies.set("session", JSON.stringify(session), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: tokens.expires_in,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
   return response;

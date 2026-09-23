@@ -17,7 +17,7 @@ a `client_secret` and a server side to keep it on.
 
 ## Running it
 
-The three provider projects have to be up first, and the client has to be
+The two provider projects have to be up first, and the client has to be
 registered on the auth server with this app's callback as a redirect URI
 (see the root [README](../README.md)):
 
@@ -36,18 +36,30 @@ npm run dev             # http://localhost:3001
 | `OAUTH_REDIRECT_URI` | `/api/auth/callback` — must be registered on the client, exactly |
 | `OAUTH_SCOPE` | `openid read write` — `openid` is what earns an ID token |
 
-## The three routes
+## The four routes
 
 | Route | Step |
 | --- | --- |
 | `GET /api/auth/login` | Generates `state`, `nonce` and a PKCE `code_verifier`, keeps them in an httpOnly cookie, redirects to `/oauth/authorize` with only the verifier's hash |
 | `GET /api/auth/callback` | Checks `state`, exchanges the code with the secret and the verifier, verifies the ID token's RS256 signature against `GET /oauth/jwks`, then its issuer, audience, expiry and `nonce`, stores the session |
-| `POST /api/auth/logout` | Clears this app's session |
+| `POST /api/auth/refresh` | Trades the refresh token for a new pair (RFC 6749 §6) and stores it — the person is not involved |
+| `POST /api/auth/logout` | Revokes the refresh token at the provider (RFC 7009), then clears this app's session |
 
-Nothing secret goes through the browser: the client secret and the
-`code_verifier` only travel on the server-to-server call to
-`/oauth/token`. The refresh token stops there too; the page gets the
-access token, its scope and lifetime, and the email from the ID token.
+Nothing secret goes through the browser: the client secret, the
+`code_verifier` and the refresh token only travel on the server-to-server
+calls to `/oauth/token`. The session cookie is `httpOnly`, so no script in
+the page can read it either.
+
+**Renewing shows the two halves of a session.** The access token dies in an
+hour; the refresh token buys a new one without sending the person back to
+the provider. The page shows when the access token expires and how long is
+left, and **Renew token** moves that forward. The refresh token on screen
+changes too: the provider rotates it on every use, so the old one is spent
+and presenting it again would end the whole session.
+
+> The page **prints both tokens**, which no real client would do — they are
+> credentials. It is here because the point of this app is to watch them
+> change.
 
 ## Structure
 
@@ -57,7 +69,8 @@ src/
     page.tsx                    Server Component: reads the session cookie, shows sign-in or the session
     api/auth/login/route.ts     step 1 — state, nonce, PKCE, redirect to the provider
     api/auth/callback/route.ts  step 2 — check state, exchange the code, check the ID token, store the session
-    api/auth/logout/route.ts    drop the session
+    api/auth/refresh/route.ts   renew the pair with the refresh token, rotation included
+    api/auth/logout/route.ts    revoke the refresh token, then drop the session
   components/                   signIn, session — presentational
   types/auth.types.ts           the shapes the routes, the page and the components share
 ```

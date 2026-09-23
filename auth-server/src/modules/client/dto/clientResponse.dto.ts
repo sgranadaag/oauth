@@ -18,18 +18,28 @@ export class ClientResponseDto {
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.REDIRECT_URIS)
   readonly redirectUris: string[];
 
+  @ApiProperty(CLIENT_PROPERTY_SWAGGER.GRANT_TYPES)
+  readonly grantTypes: string[];
+
+  @ApiProperty(CLIENT_PROPERTY_SWAGGER.ACCESS_TOKEN_TTL_SECONDS)
+  readonly accessTokenTtlSeconds: number | null;
+
   private constructor(
     clientId: string,
     clientSecret: string,
     name: string,
     allowedScopes: string[],
     redirectUris: string[],
+    grantTypes: string[],
+    accessTokenTtlSeconds: number | null,
   ) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.name = name;
     this.allowedScopes = allowedScopes;
     this.redirectUris = redirectUris;
+    this.grantTypes = grantTypes;
+    this.accessTokenTtlSeconds = accessTokenTtlSeconds;
   }
 
   static fromEntity(
@@ -42,6 +52,8 @@ export class ClientResponseDto {
       client.name,
       client.allowedScopes,
       client.redirectUris,
+      client.grantTypes,
+      client.accessTokenTtlSeconds,
     );
   }
 }

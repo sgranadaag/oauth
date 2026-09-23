@@ -25,6 +25,10 @@ export class ClientCredentialsGrantService implements GrantHandler {
       params.scope,
     );
 
-    return this.tokenService.issue({ clientId: client.id, scope });
+    return this.tokenService.issue({
+      clientId: client.id,
+      scope,
+      accessTokenTtlSeconds: client.accessTokenTtlSeconds ?? undefined,
+    });
   }
 }

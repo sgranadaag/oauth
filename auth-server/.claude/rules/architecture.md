@@ -205,6 +205,23 @@ deliberately removed.
   like any other caller, and `UserModule` exports nothing so the two
   cannot be wired together by accident — **never the reverse** — a domain module that needs something
   from here has its responsibility in the wrong place.
+- **What is about one client is registered on the client, not
+  configured.** `ClientEntity` carries its `redirectUris`, its
+  `allowedScopes`, its `grantTypes` (RFC 7591 — asking for one it does
+  not hold is `unauthorized_client`, at `/authorize` and at `/token`) and
+  its `accessTokenTtlSeconds` (`null` = the server default,
+  `ACCESS_TOKEN_TTL_SECONDS`). Reach for a column before an environment
+  variable: an env var makes the whole server do one thing, which is
+  wrong the moment a second client needs another. The token module still
+  knows no client — the grant reads the field and passes a number.
+- **What is about an identity provider is configuration, not a client
+  field.** `IDENTITY_PROVIDERS` in `oauth.constants.ts` maps the `idp`
+  parameter of an authorization request to the environment variable
+  holding that provider's sign-in page (`local` → `LOCAL_IDP_LOGIN_URL`).
+  Adding a provider is one entry plus one variable; an unknown `idp` goes
+  back to the client as `invalid_request`. A client does not own a login
+  page: **which** identity is proved is the request's to say, **where**
+  that happens is the provider's.
 - **`/oauth/authorize` fails in two ways, on purpose.** While the client
   or its `redirect_uri` are unproven, errors are answered on the spot and
   the browser goes nowhere — redirecting to an unverified URL would make
@@ -405,13 +422,29 @@ Code with no per-module home is split into dedicated top-level layers
 by *kind*, not lumped into one general-purpose `common/` folder:
 
 - `src/guards/` — **every** route-level allow/deny guard, without
-  exception. Two today, one per credential shape:
+  exception. Three today:
   - `AdminGuard` — the `x-admin-key` provider credential
     (`ADMIN_API_KEY`), on `POST /clients`, both interaction endpoints and
     `/users/verify`: everything that is the provider talking to itself.
     Depends only on the global `ConfigService`, compares through
     `constantTimeEquals`, and answers **403** — never 401, which on
     `/users/verify` means wrong credentials.
+  - `GrantTypeGuard` — may this client use the `grant_type` it sent?
+    Only on `POST /oauth/token`, and only **after** `BasicTokenGuard`
+    (`@UseGuards(BasicTokenGuard, GrantTypeGuard)`), since it reads the
+    client that one put on the request. Denies with an `OauthException`
+    (`unauthorized_client`), so the body stays RFC 6749 §5.2. A missing
+    `grant_type` passes through — that is `invalid_request`, which
+    `OauthService` answers. Whether the *server* supports the grant is a
+    different question, and stays with the registry.
+
+    **It cannot guard `/oauth/authorize`**, and that is the spec's doing,
+    not an oversight: there the client is not authenticated by a guard
+    (it arrives as `client_id` in the query) and an `unauthorized_client`
+    has to be *redirected* to the client's `redirect_uri` (§4.1.2.1), not
+    thrown — which needs the client and its redirect URI resolved first.
+    `OauthService.authorize` does that check inline, with the same
+    `DEFAULT_GRANT_TYPES` fallback.
   - `BasicTokenGuard` — authenticates a *client* via
     `Authorization: Basic base64(clientId:clientSecret)`, the same
     credential shape `POST /oauth/token` uses. Depends on

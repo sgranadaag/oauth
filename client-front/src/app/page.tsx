@@ -20,7 +20,11 @@ const HomePage = async ({ searchParams }: HomePageProps): Promise<ReactElement> 
     session = null;
   }
 
-  return session ? <SessionCard session={session} /> : <SignIn error={error} />;
+  return session ? (
+    <SessionCard session={session} error={error} />
+  ) : (
+    <SignIn error={error} />
+  );
 };
 
 export default HomePage;

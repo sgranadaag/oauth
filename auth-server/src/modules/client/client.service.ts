@@ -1,18 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { DEFAULT_GRANT_TYPES } from './client.constants';
 import { ClientEntity } from './client.entity';
 import { ClientRepository } from './client.repository';
-import type { CreateClientResult } from './interfaces/createClient.interface';
+import type {
+  CreateClientInput,
+  CreateClientResult,
+} from './interfaces/createClient.interface';
 
 @Injectable()
 export class ClientService {
   constructor(private readonly clientRepository: ClientRepository) {}
 
-  async create(
-    name: string,
-    allowedScopes: string[],
-    redirectUris: string[],
-  ): Promise<CreateClientResult> {
+  async create({
+    name,
+    allowedScopes,
+    redirectUris,
+    grantTypes,
+    accessTokenTtlSeconds,
+  }: CreateClientInput): Promise<CreateClientResult> {
     const clientSecret = randomUUID();
 
     const client = new ClientEntity();
@@ -21,6 +27,8 @@ export class ClientService {
     client.name = name;
     client.allowedScopes = allowedScopes;
     client.redirectUris = redirectUris;
+    client.grantTypes = grantTypes ?? DEFAULT_GRANT_TYPES;
+    client.accessTokenTtlSeconds = accessTokenTtlSeconds ?? null;
 
     const saved = await this.clientRepository.save(client);
 

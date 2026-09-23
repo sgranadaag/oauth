@@ -3,9 +3,9 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  ObjectId,
   ObjectIdColumn,
 } from 'typeorm';
+import type { ObjectId } from 'mongodb';
 
 // An authorization request that has been validated and is waiting for the
 // person to sign in. It exists so the login page never has to carry the

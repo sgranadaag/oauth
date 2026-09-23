@@ -3,9 +3,9 @@ import {
   CreateDateColumn,
   Entity,
   Index,
-  ObjectId,
   ObjectIdColumn,
 } from 'typeorm';
+import type { ObjectId } from 'mongodb';
 
 // A code the person's sign-in produced, waiting to be exchanged. `id` is the
 // value the client receives. It is bound to everything the exchange has to

@@ -39,7 +39,10 @@ export class TokenService {
     scope,
     sessionId,
     sessionExpiresAt,
+    accessTokenTtlSeconds,
   }: IssueTokenInput): Promise<IssuedTokens> {
+    const accessTokenTtl = accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS;
+
     const accessToken = signAccessToken(
       // No user means the client itself is the subject, as RFC 9068 §5 expects
       // for client_credentials.
@@ -47,13 +50,13 @@ export class TokenService {
       {
         issuer: this.issuer(),
         audience: DEFAULT_AUDIENCE,
-        expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS,
+        expiresInSeconds: accessTokenTtl,
       },
     );
 
     const issued: IssuedTokens = {
       accessToken,
-      expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS,
+      expiresInSeconds: accessTokenTtl,
       scope,
     };
 
@@ -86,6 +89,22 @@ export class TokenService {
         expiresInSeconds: ID_TOKEN_TTL_SECONDS,
       },
     );
+  }
+
+  /**
+   * Ends the session a refresh token belongs to, by deleting every token in
+   * it — the one presented and the ones it was rotated from.
+   *
+   * A token this client did not get is left alone: nothing is revealed either
+   * way, since the caller is told nothing about what was found.
+   */
+  async revokeSession(tokenId: string, clientId: string): Promise<void> {
+    const token = await this.tokenRepository.findById(tokenId);
+    if (!token || token.clientId !== clientId) {
+      return;
+    }
+
+    await this.tokenRepository.deleteBySessionId(token.sessionId);
   }
 
   private async issueRefreshToken({

@@ -28,10 +28,20 @@ export interface AuthorizationTransaction {
   codeVerifier: string;
 }
 
-/** What reaches the page — deliberately not the refresh token. */
+/**
+ * What this app keeps after signing someone in, in an httpOnly cookie.
+ *
+ * It holds the refresh token so the session can be renewed without sending
+ * the person back to the provider. The cookie is `httpOnly`, so no script in
+ * the page can read it — but this app then *renders* both tokens, which is
+ * illustration, not something a real client would do.
+ */
 export interface Session {
   email: string;
   scope: string;
   accessToken: string;
-  expiresIn: number;
+  refreshToken: string;
+  // Absolute, in epoch milliseconds, so the page can show when the access
+  // token dies and how that moves after a renewal.
+  expiresAt: number;
 }

@@ -23,12 +23,16 @@ export const OAUTH_SWAGGER = {
         '`redirect_uri` (must match one registered for the client exactly), ' +
         '`scope` (include `openid` for an ID token), `state`, `nonce`, ' +
         '`code_challenge` and `code_challenge_method=S256` — PKCE is ' +
-        'mandatory.\n\n' +
+        'mandatory. `idp` is optional and not from the RFC: it names which ' +
+        'identity provider should authenticate the person (`local` by ' +
+        'default), and the server resolves it to that provider’s sign-in ' +
+        'page.\n\n' +
         'On success it redirects to the provider login page with an ' +
         '`interaction` id. If the client or its redirect_uri cannot be ' +
         'verified it answers 400 here and redirects nowhere; any later error ' +
         'is sent back to the redirect_uri as `error`, `error_description` and ' +
-        '`state`.',
+        '`state` — `unauthorized_client` when the client is not registered ' +
+        'for `authorization_code`, `invalid_request` for an unknown `idp`.',
     },
     responses: {
       302: { description: 'To the login page, or back to the client with an error.' },
@@ -72,6 +76,50 @@ export const OAUTH_SWAGGER = {
       200: { description: '`{ redirectTo }` — back to the client with the code.' },
       403: { description: 'Missing or wrong admin key.' },
       404: { description: 'Unknown, expired or already completed interaction.' },
+    },
+  },
+
+  REVOKE: {
+    operation: {
+      summary: 'Revocation endpoint (RFC 7009)',
+      description:
+        'Ends the session a refresh token belongs to: that token and every ' +
+        'one it was rotated from. What "sign out" means for a client.\n\n' +
+        'The answer is **200 whether or not the token existed** (§2.2), so ' +
+        'the endpoint cannot be used to find out which tokens are real. A ' +
+        'token belonging to another client is left alone, just as silently.\n\n' +
+        'Access tokens already issued are **not** affected: they are JWTs, ' +
+        'verified offline, and stay valid until `exp`.',
+    },
+    security: CLIENT_BASIC_SECURITY,
+    consumes: 'application/x-www-form-urlencoded',
+    body: {
+      required: true,
+      schema: {
+        type: 'object' as const,
+        required: ['token'],
+        properties: {
+          token: {
+            type: 'string' as const,
+            description: 'The refresh token to revoke.',
+          },
+          token_type_hint: {
+            type: 'string' as const,
+            enum: ['refresh_token', 'access_token'],
+            description:
+              'Optional hint. This server stores only refresh tokens, so it ' +
+              'changes nothing.',
+          },
+        },
+      },
+    },
+    responses: {
+      200: { description: 'Revoked, or there was nothing to revoke.' },
+      400: {
+        description: 'RFC 6749 §5.2 error — `invalid_request` when `token` is missing.',
+        schema: RFC_ERROR_SCHEMA('invalid_request'),
+      },
+      401: { description: 'Missing, malformed or invalid client credentials.' },
     },
   },
 
@@ -185,7 +233,8 @@ export const OAUTH_SWAGGER = {
       },
       400: {
         description:
-          'RFC 6749 §5.2 error — `invalid_grant` (an unknown, used or ' +
+          'RFC 6749 §5.2 error — `unauthorized_client` (the client is not ' +
+          'registered for this `grant_type`), `invalid_grant` (an unknown, used or ' +
           'expired code or refresh token; a redirect_uri or ' +
           'code_verifier that does not match), `invalid_scope`, ' +
           '`invalid_request` or `unsupported_grant_type`.',

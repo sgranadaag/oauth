@@ -1,16 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
-import type { JwkSet } from '@interfaces/jwks.interface';
-import { getPublicJwks } from '@utils/keys.util';
-import { buildUrl } from '@utils/url.util';
+import type { JwkSet } from '@modules/oauth/token/interfaces/jwks.interface';
+import { getPublicJwks } from '@modules/oauth/token/utils/keys.util';
+import { buildUrl } from '@common/utils/http.util';
 import type { ClientEntity } from '@modules/client/client.entity';
 import { ClientRepository } from '@modules/client/client.repository';
 import { DEFAULT_GRANT_TYPES } from '@modules/client/client.constants';
-import { AuthorizationService } from '@modules/authorization/authorization.service';
-import type { AuthenticatedUser } from '@modules/authorization/interfaces/authorization.interface';
-import { TokenService } from '@modules/token/token.service';
-import type { IssuedTokens } from '@modules/token/interfaces/issueToken.interface';
+import { CodeService } from '@modules/oauth/code/code.service';
+import { TokenService } from '@modules/oauth/token/token.service';
+import type { IssuedTokens } from '@modules/oauth/token/interfaces/issueToken.interface';
 import {
   CODE_RESPONSE_TYPE,
   DEFAULT_IDENTITY_PROVIDER,
@@ -20,8 +19,9 @@ import {
   TOKEN_TYPE,
 } from '@modules/oauth/oauth.constants';
 import { OauthException } from '@modules/oauth/oauth.exception';
-import { ScopeService } from '@modules/oauth/scope.service';
+import { ScopeService } from '@modules/oauth/scope/scope.service';
 import type {
+  AuthenticatedUser,
   AuthorizeQuery,
   InteractionAcceptResult,
   InteractionDetails,
@@ -31,15 +31,15 @@ import type {
   TokenResponse,
 } from '@modules/oauth/interfaces/tokenEndpoint.interface';
 import type { RevokeRequestParams } from '@modules/oauth/interfaces/revokeEndpoint.interface';
-import { GRANT_TYPES } from '@modules/oauth/grantTypes/grantTypes.registry';
-import { AUTHORIZATION_CODE_GRANT_TYPE } from '@modules/oauth/grantTypes/grantTypes.constants';
+import { GRANT_TYPES } from '@modules/oauth/grant/grant.registry';
+import { AUTHORIZATION_CODE_GRANT_TYPE } from '@modules/oauth/grant/grant.constants';
 
 @Injectable()
 export class OauthService {
   constructor(
     private readonly moduleRef: ModuleRef,
     private readonly clientRepository: ClientRepository,
-    private readonly authorizationService: AuthorizationService,
+    private readonly codeService: CodeService,
     private readonly scopeService: ScopeService,
     private readonly tokenService: TokenService,
     private readonly configService: ConfigService,
@@ -52,8 +52,9 @@ export class OauthService {
     }
 
     const redirectUri = query.redirect_uri;
+    const registeredUris = client.redirectUris ?? [];
 
-    if (!redirectUri || !(client.redirectUris ?? []).includes(redirectUri)) {
+    if (!redirectUri || !registeredUris.includes(redirectUri)) {
       throw new OauthException(
         OAUTH_ERRORS.INVALID_REQUEST,
         'redirect_uri is not registered for this client',
@@ -74,8 +75,6 @@ export class OauthService {
       );
     }
 
-    // Registered for this grant? A client that only holds `client_credentials`
-    // has no business sending a person here (§4.1.2.1 `unauthorized_client`).
     if (!this.allowsGrant(client, AUTHORIZATION_CODE_GRANT_TYPE)) {
       return backToClient(
         OAUTH_ERRORS.UNAUTHORIZED_CLIENT,
@@ -83,8 +82,6 @@ export class OauthService {
       );
     }
 
-    // Which identity should the person prove? The `idp` names a provider this
-    // server knows; where that provider signs people in is configuration.
     const loginUrl = this.loginUrl(query.idp ?? DEFAULT_IDENTITY_PROVIDER);
     if (!loginUrl) {
       return backToClient(
@@ -111,7 +108,7 @@ export class OauthService {
       );
     }
 
-    const request = await this.authorizationService.createRequest({
+    const request = await this.codeService.createRequest({
       clientId: client.id,
       redirectUri,
       scope,
@@ -123,7 +120,6 @@ export class OauthService {
     return buildUrl(loginUrl, { interaction: request.id });
   }
 
-  // What the login page shows: who is asking, and for what.
   async interaction(interactionId: string): Promise<InteractionDetails> {
     const request = await this.activeRequest(interactionId);
     const client = await this.clientRepository.findByClientId(request.clientId);
@@ -131,17 +127,13 @@ export class OauthService {
     return { clientName: client?.name ?? request.clientId, scope: request.scope };
   }
 
-  // The login app says who signed in, and it is believed: how the person
-  // proved it (a password today, more factors later) is between the login app
-  // and the identity side, and never reaches this module. What the client
-  // gets back is a code, through the browser, to its own redirect_uri.
   async acceptInteraction(
     interactionId: string,
     user: AuthenticatedUser,
   ): Promise<InteractionAcceptResult> {
     const request = await this.activeRequest(interactionId);
 
-    const code = await this.authorizationService.issueCode(request, user);
+    const code = await this.codeService.issueCode(request, user);
     if (!code) {
       throw new NotFoundException('This sign-in has already been completed');
     }
@@ -154,10 +146,6 @@ export class OauthService {
     };
   }
 
-  // RFC 7009. The answer is a 200 whether or not anything was found: telling
-  // a caller "that token does not exist" would make this an oracle for
-  // guessing them. Only a missing `token` is an error, and that is about the
-  // request rather than about the token.
   async revoke(
     client: ClientEntity,
     params: RevokeRequestParams,
@@ -169,23 +157,13 @@ export class OauthService {
       );
     }
 
-    // Revoking one refresh token ends the whole session it belongs to
-    // (§2.1: the tokens issued from the same authorization), which is what
-    // "sign out" means. Access tokens already issued still verify until they
-    // expire — nothing can withdraw a JWT.
     await this.tokenService.revokeSession(params.token, client.id);
   }
 
-  // The keys a verifier needs to check a token offline — a client its ID
-  // token, an API an access token. Public halves only.
   jwks(): JwkSet {
     return getPublicJwks();
   }
 
-  // Which grant runs is data, not a switch: the registry is the only place that
-  // knows the set. The handler is resolved per request rather than injected,
-  // because the set is only known at runtime — Nest caches singletons, so this
-  // is a map lookup, not a re-instantiation.
   async token(
     client: ClientEntity,
     params: TokenRequestParams,
@@ -206,30 +184,20 @@ export class OauthService {
       );
     }
 
-    // Whether this client may use this grant was decided by `GrantTypeGuard`,
-    // before the request got here.
-    const issued = await this.moduleRef
-      .get(registration.service)
-      .handle(client, params);
+    const handler = this.moduleRef.get(registration.service, { strict: false });
+    const issued = await handler.handle(client, params);
 
     return this.toTokenResponse(issued);
   }
 
-  // Only `/authorize` asks here — the token endpoint has `GrantTypeGuard`.
-  // A client registered before `grantTypes` existed falls back to the same
-  // default a bare registration gets.
   private allowsGrant(client: ClientEntity, grantType: string): boolean {
     return (client.grantTypes ?? DEFAULT_GRANT_TYPES).includes(grantType);
   }
 
-  // The sign-in page of a known identity provider, or `undefined` when the
-  // request named one this server does not have.
   private loginUrl(identityProvider: string): string | undefined {
     const provider =
       IDENTITY_PROVIDERS[identityProvider as keyof typeof IDENTITY_PROVIDERS];
-    if (!provider) {
-      return undefined;
-    }
+    if (!provider) return undefined;
 
     return (
       this.configService.get<string>(provider.env) ?? provider.defaultUrl
@@ -238,7 +206,7 @@ export class OauthService {
 
   private async activeRequest(interactionId: string) {
     const request =
-      await this.authorizationService.findActiveRequest(interactionId);
+      await this.codeService.findActiveRequest(interactionId);
     if (!request) {
       throw new NotFoundException(
         'This sign-in link has expired. Start again from the application.',
@@ -248,8 +216,6 @@ export class OauthService {
     return request;
   }
 
-  // The one place the wire format is spoken: grants and the token module work
-  // in their own vocabulary, and RFC 6749 §5.1 names are applied here.
   private toTokenResponse({
     accessToken,
     expiresInSeconds,

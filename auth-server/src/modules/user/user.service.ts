@@ -4,16 +4,22 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { hashPassword, verifyPassword } from '@utils/password.util';
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  verifyPassword,
+} from '@modules/user/user.util';
 import { UserEntity } from '@modules/user/user.entity';
 import { UserRepository } from '@modules/user/user.repository';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(private readonly userRepository: UserRepository) { }
 
   async signup(email: string, password: string): Promise<UserEntity> {
-    if (await this.userRepository.findByEmail(email)) {
+    const existingUser = await this.userRepository.findByEmail(email);
+
+    if (existingUser) {
       throw new ConflictException(`Email ${email} is already registered`);
     }
 
@@ -25,12 +31,13 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  // One failure for every cause — unknown email or wrong password — so the
-  // answer cannot be used to find out which emails are registered.
   async verifyCredentials(email: string, password: string): Promise<UserEntity> {
     const user = await this.userRepository.findByEmail(email);
 
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    const passwordHash = user?.passwordHash ?? DUMMY_PASSWORD_HASH;
+    const hasValidPassword = await verifyPassword(password, passwordHash);
+
+    if (!user || !hasValidPassword) {
       throw new UnauthorizedException('Invalid credentials');
     }
 

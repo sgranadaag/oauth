@@ -9,11 +9,9 @@ import {
   IsUrl,
   Min,
 } from 'class-validator';
-import { GRANT_TYPES } from '@modules/oauth/grantTypes/grantTypes.registry';
-import { MIN_ACCESS_TOKEN_TTL_SECONDS } from '../client.constants';
-import { CLIENT_PROPERTY_SWAGGER } from '../client.swagger';
-
-const SUPPORTED_GRANT_TYPES = GRANT_TYPES.map((grant) => grant.type);
+import { SUPPORTED_GRANT_TYPES } from '@modules/oauth/grant/grant.constants';
+import { MIN_ACCESS_TOKEN_TTL_SECONDS } from '@modules/client/client.constants';
+import { CLIENT_PROPERTY_SWAGGER } from '@modules/client/client.swagger';
 
 export class CreateClientDto {
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.NAME)
@@ -32,8 +30,6 @@ export class CreateClientDto {
   @IsUrl({ require_tld: false }, { each: true })
   redirectUris?: string[];
 
-  // Checked against the registry, so a typo is a 400 here rather than an
-  // `unauthorized_client` at the token endpoint later.
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.GRANT_TYPES)
   @IsOptional()
   @IsArray()

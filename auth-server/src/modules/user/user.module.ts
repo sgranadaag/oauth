@@ -10,8 +10,5 @@ import { UserService } from '@modules/user/user.service';
   controllers: [UserController],
   providers: [UserRepository, UserService],
 })
-// Deliberately exports nothing: the oauth module never asks this one about a
-// person. It learns who signed in from the login app's `accept`, which the
-// login app builds by calling `/users/verify` from outside. Same process,
-// same database, no call between the two.
+
 export class UserModule {}

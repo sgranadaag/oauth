@@ -13,12 +13,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { SwaggerDocs } from '@decorators/swaggerDocs.decorator';
-import { BasicTokenGuard } from '@guards/basicToken.guard';
-import { GrantTypeGuard } from '@guards/grantType.guard';
-import { AdminGuard } from '@guards/admin.guard';
-import type { BasicTokenRequest } from '@interfaces/authenticatedRequest.interface';
-import type { JwkSet } from '@interfaces/jwks.interface';
+import { SwaggerDocs } from '@common/decorators/swaggerDocs.decorator';
+import { BasicTokenGuard } from '@common/guards/basicToken.guard';
+import { GrantTypeGuard } from '@common/guards/grantType.guard';
+import { AdminGuard } from '@common/guards/admin.guard';
+import type { BasicTokenRequest } from '@common/interfaces/authenticatedRequest.interface';
+import type { JwkSet } from '@modules/oauth/token/interfaces/jwks.interface';
 import { OauthService } from '@modules/oauth/oauth.service';
 import { OAUTH_SWAGGER } from '@modules/oauth/oauth.swagger';
 import { InteractionAcceptDto } from '@modules/oauth/dto/interactionAccept.dto';
@@ -58,8 +58,8 @@ export class OauthController {
   @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_ACCEPT)
   @UseGuards(AdminGuard)
   @Post('interactions/:interactionId/accept')
-  @Header('Cache-Control', 'no-store')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   acceptInteraction(
     @Param('interactionId') interactionId: string,
     @Body() dto: InteractionAcceptDto,
@@ -70,9 +70,6 @@ export class OauthController {
     });
   }
 
-  // RFC 7009. Same client credentials as the token endpoint, and the same
-  // `no-store`: the body carries a live credential on its way to being
-  // destroyed. No content comes back — 200 is the whole answer.
   @SwaggerDocs(OAUTH_SWAGGER.REVOKE)
   @UseGuards(BasicTokenGuard)
   @Post('revoke')

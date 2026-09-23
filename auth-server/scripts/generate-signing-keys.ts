@@ -22,7 +22,7 @@ function main(): void {
     privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
   });
 
-  const secretsDir = join(__dirname, '..', 'src', 'secrets');
+  const secretsDir = join(__dirname, '..', 'src', 'core', 'secrets');
   mkdirSync(secretsDir, { recursive: true });
 
   writeFileSync(join(secretsDir, 'private.pem'), privateKey);

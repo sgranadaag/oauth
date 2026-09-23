@@ -1,9 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 
-// Who signed in, as the login app learned it from `/users/verify`. This
-// server does not check it again: the key on the request is what makes it
-// believable.
 export class InteractionAcceptDto {
   @ApiProperty({
     description: 'The user id /users/verify returned — the tokens `sub`.',

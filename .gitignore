@@ -71,8 +71,8 @@ web_modules/
 !.env.example
 
 # generated JWT signing key pair — regenerate locally with `npm run generate-signing-keys`
-src/secrets/*.pem
-src/secrets/*.jwk.json
+src/core/secrets/*.pem
+src/core/secrets/*.jwk.json
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

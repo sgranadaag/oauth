@@ -7,8 +7,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { SwaggerDocs } from '@decorators/swaggerDocs.decorator';
-import { AdminGuard } from '@guards/admin.guard';
+import { SwaggerDocs } from '@common/decorators/swaggerDocs.decorator';
+import { AdminGuard } from '@common/guards/admin.guard';
 import { UserService } from '@modules/user/user.service';
 import { USER_SWAGGER } from '@modules/user/user.swagger';
 import { SignupDto } from '@modules/user/dto/signup.dto';

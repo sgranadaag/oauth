@@ -1,8 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
-import { ENV } from '@constants/environment.constant';
-import { setupSwagger } from '@config/swagger.config';
+import { ENV } from '@core/config/env.config';
+import { setupSwagger } from '@core/config/swagger.config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {

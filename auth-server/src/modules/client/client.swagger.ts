@@ -1,5 +1,5 @@
 import type { ApiPropertyOptions } from '@nestjs/swagger';
-import { ADMIN_KEY_SECURITY } from '@config/swagger.config';
+import { ADMIN_KEY_SECURITY } from '@core/config/swagger.config';
 
 export const CLIENT_SWAGGER = {
   API_TAG: 'Clients',

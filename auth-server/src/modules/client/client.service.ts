@@ -6,7 +6,7 @@ import { ClientRepository } from './client.repository';
 import type {
   CreateClientInput,
   CreateClientResult,
-} from './interfaces/createClient.interface';
+} from '@modules/client/interfaces/createClient.interface';
 
 @Injectable()
 export class ClientService {

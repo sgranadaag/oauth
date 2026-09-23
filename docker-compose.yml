@@ -22,15 +22,15 @@ services:
       timeout: 5s
       retries: 20
 
-  # Writes auth-server/src/secrets/*.pem once, if they are not there yet, and
+  # Writes auth-server/src/core/secrets/*.pem once, if they are not there yet, and
   # exits. The keys stay on the host and are mounted, never baked into an image.
   signing-keys:
     build:
       context: ./auth-server
       target: build
-    command: sh -c "test -f src/secrets/private.pem || npm run generate-signing-keys"
+    command: sh -c "test -f src/core/secrets/private.pem || npm run generate-signing-keys"
     volumes:
-      - ./auth-server/src/secrets:/app/src/secrets
+      - ./auth-server/src/core/secrets:/app/src/core/secrets
 
 
   auth-server:
@@ -43,7 +43,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./auth-server/src/secrets:/app/src/secrets:ro
+      - ./auth-server/src/core/secrets:/app/src/core/secrets:ro
     depends_on:
       mongo:
         condition: service_healthy

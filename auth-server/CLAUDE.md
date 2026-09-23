@@ -30,14 +30,33 @@ is typed only on `auth-front` — so don't add it back unless the user asks.
 
 ## The shape of the module graph
 
+`src/` is three layers — `core/` (plumbing that runs once), `common/`
+(shared, stateless, domain-free) and `modules/` — with one alias each.
+Inside `modules/`:
+
 ```
 oauth/          speaks RFC 6749 / OIDC: /authorize, the interaction endpoints,
-                /token and its grants, the scope policy, the error body
-authorization/  pending authorization requests and one-time codes — storage and lifecycle
-token/          mints, stores and rotates tokens, signs ID tokens — knows no grant
-client/         the registered clients, with their redirect URIs
+                /token and its grants, /revoke, /jwks, the error body
+  code/         pending authorization requests and one-time codes — storage and lifecycle
+  token/        mints, stores and rotates tokens, signs them, owns the signing keys
+  grant/        one service per grant_type, plus the registry that names the set
+  scope/        the scope policy, shared by /authorize and the grants
+client/         the registered clients, with their redirect URIs and policy
 user/           the accounts and their password hashes — /users/signup and /users/verify
 ```
+
+**The four nested modules exist because `oauth` is their only caller.**
+Nothing else in the server imports them, and `app.module.ts` registers
+`OauthModule` alone. The nesting is where they live, not what they are:
+each is its own Nest module with its own providers, and none of them
+knows the protocol — `code/` and `token/` store and mint what they are
+handed, `grant/` holds one service per `grant_type`, `scope/` holds the
+policy both `/authorize` and the grants narrow with.
+
+Because the grant handlers are providers of `GrantModule` rather than of
+`OauthModule`, `OauthService` resolves one with
+`moduleRef.get(service, { strict: false })` — a strict lookup searches
+only the host module.
 
 **`user/` is a neighbour, not a dependency.** It exports nothing and
 `oauth` never imports it: the identity side answers `/users/verify` to the
@@ -103,7 +122,7 @@ reverse. The boundaries that carry most of the design:
 **Deliberately light: no tests, no linter, no formatter.** The
 `Dockerfile` exists only for the root `docker-compose.yml`; it builds with
 `@rspack/core` (declared, since the Nest CLI needs it for its `rspack`
-builder) and reads the signing keys from a mounted `src/secrets/`.
+builder) and reads the signing keys from a mounted `src/core/secrets/`.
 Don't add any of them back unless the user asks. The user runs the app
 themselves; don't run `npm run build` or `npm run start:dev` unless
 asked — report what changed and what is worth verifying.

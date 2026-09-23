@@ -15,14 +15,9 @@
     "outDir": "./dist",
     "types": ["node"],
     "paths": {
-      "@modules/*": ["./src/modules/*"],
-      "@decorators/*": ["./src/decorators/*"],
-      "@guards/*": ["./src/guards/*"],
-      "@middlewares/*": ["./src/middlewares/*"],
-      "@config/*": ["./src/config/*"],
-      "@constants/*": ["./src/constants/*"],
-      "@interfaces/*": ["./src/interfaces/*"],
-      "@utils/*": ["./src/utils/*"]
+      "@core/*": ["./src/core/*"],
+      "@common/*": ["./src/common/*"],
+      "@modules/*": ["./src/modules/*"]
     },
     "incremental": true,
     "skipLibCheck": true,

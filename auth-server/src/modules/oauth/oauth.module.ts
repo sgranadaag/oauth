@@ -1,26 +1,22 @@
 import { Module } from '@nestjs/common';
-import { BasicTokenGuard } from '@guards/basicToken.guard';
-import { AuthorizationModule } from '@modules/authorization/authorization.module';
+import { BasicTokenGuard } from '@common/guards/basicToken.guard';
 import { ClientModule } from '@modules/client/client.module';
-import { TokenModule } from '@modules/token/token.module';
+import { CodeModule } from '@modules/oauth/code/code.module';
+import { TokenModule } from '@modules/oauth/token/token.module';
+import { ScopeModule } from '@modules/oauth/scope/scope.module';
+import { GrantModule } from '@modules/oauth/grant/grant.module';
 import { OauthController } from '@modules/oauth/oauth.controller';
 import { OauthService } from '@modules/oauth/oauth.service';
-import { ScopeService } from '@modules/oauth/scope.service';
-import { GRANT_TYPES } from '@modules/oauth/grantTypes/grantTypes.registry';
-
-// Every grant service becomes a provider, so ModuleRef can resolve it per
-// request. Derived from the registry rather than listed by hand — adding a
-// grant touches only grantTypes.registry.ts.
-const grantTypeProviders = GRANT_TYPES.map((grant) => grant.service);
 
 @Module({
-  imports: [ClientModule, AuthorizationModule, TokenModule],
-  controllers: [OauthController],
-  providers: [
-    OauthService,
-    ScopeService,
-    BasicTokenGuard,
-    ...grantTypeProviders,
+  imports: [
+    ClientModule,
+    CodeModule,
+    TokenModule,
+    ScopeModule,
+    GrantModule,
   ],
+  controllers: [OauthController],
+  providers: [OauthService, BasicTokenGuard],
 })
 export class OauthModule {}

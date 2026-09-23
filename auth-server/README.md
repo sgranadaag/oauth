@@ -63,7 +63,7 @@ Needs MongoDB:
 ```bash
 cp .env.example .env          # ADMIN_API_KEY must match AUTH_SERVER_ADMIN_KEY in auth-front/.env
 npm i
-npm run generate-signing-keys # first time: writes src/secrets/*.pem
+npm run generate-signing-keys # first time: writes src/core/secrets/*.pem
 npm run start:dev             # http://localhost:3000
 ```
 
@@ -79,17 +79,30 @@ misconfiguration cannot pass for a wrong password.
 ## Layout
 
 ```
+src/core/                   config, the database connection, the request logger, the signing-key files
+src/common/                 guards (Basic, admin key, grant), decorators, generic utils, shared interfaces
 src/modules/oauth/          the protocol: authorize, interactions, token endpoint, scopes, errors, grants
-src/modules/authorization/  pending authorization requests and one-time codes
-src/modules/token/          minting, storing and rotating tokens, sessions with a fixed end — knows no protocol
+src/modules/oauth/code/       pending authorization requests and one-time codes
+src/modules/oauth/token/      minting, storing and rotating tokens, the signing keys — knows no protocol
+src/modules/oauth/grant/      one service per grant_type, plus the registry that names the set
+src/modules/oauth/scope/      the scope policy, shared by /authorize and the grants
 src/modules/client/         registered clients, with their redirect URIs
-src/modules/user/           the accounts: signup and credential check — called by nothing above
-src/guards/                 Basic (client), admin key, grant allowed for this client
-src/utils/                  keys, JWT and ID token signing, PKCE, bcrypt, constant-time comparison
+src/modules/user/           the accounts: signup, credential check, bcrypt — called by nothing above
 ```
 
+Three layers, three path aliases — `@core/*`, `@common/*`,
+`@modules/*`. `core/` is wiring that runs once, `common/` is shared and
+stateless, `modules/` is the only layer that knows what this server
+does. Dependencies run one way, toward `core` and `common`.
+
+The four modules under `oauth/` sit there because nothing else calls
+them. Each is a separate Nest module with its own providers, and none of
+them knows the protocol.
+
 One MongoDB database, five collections: `clients`, `tokens`,
-`authorization_requests`, `authorization_codes` and `users`.
+`authorization_requests`, `authorization_codes` and `users` — the two
+collection names kept the protocol's wording when the module became
+`code/`, since renaming them would orphan existing documents.
 Deliberately light: no tests, no linter, no migrations. The `Dockerfile`
 is for the root `docker-compose.yml`, which also writes the signing keys on
 first start.

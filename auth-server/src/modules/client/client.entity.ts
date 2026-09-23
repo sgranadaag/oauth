@@ -28,15 +28,9 @@ export class ClientEntity {
   @Column()
   redirectUris: string[];
 
-  // Which grants this client may use (RFC 7591 `grant_types`). A client
-  // registered for the code flow cannot also ask for client_credentials
-  // unless it says so here.
   @Column()
   grantTypes: string[];
 
-  // Lifetime of the access tokens issued for this client. `null` means the
-  // server's default: a client may shorten or lengthen its own tokens without
-  // touching anyone else's.
   @Column({ nullable: true })
   accessTokenTtlSeconds: number | null;
 

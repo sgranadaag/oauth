@@ -19,7 +19,7 @@ lazy abbreviation). When in doubt, prefer the longer, clearer name.
 
 ## Readability over density
 
-Three rules, all about reading a line once and knowing what it does.
+Four rules, all about reading a line once and knowing what it does.
 
 **A method that awaits is `async`, and returns plain values.** Don't reach
 for `Promise.resolve(...)` to keep a method synchronous: mark it `async`
@@ -59,6 +59,24 @@ The same applies to a call wrapped in a mapper or a response helper
 `const` first. A single call returned on its own — `return
 this.oauthService.jwks();` — is already clear and stays as it is.
 
+**A condition gets the same treatment**, and needs it more, since a
+negated await reads backwards:
+
+```ts
+// Yes
+const wasConsumed = await this.codeRepository.consumeCode(value);
+
+if (!wasConsumed) return null;
+
+// No
+if (!(await this.codeRepository.consumeCode(value))) return null;
+```
+
+Name the check the same way when it is a comparison rather than a call
+(`hasValidSecret`, `isRegisteredUri`). Splitting the branches is a
+readability change only: they keep answering the same thing, for the
+reasons in **Secrets**.
+
 **A conditional spread gets a name too.** `...(x ? { y: x } : {})` inside
 an object literal hides a decision in the middle of the shape being
 built. Declare each one above, then spread the names, so the literal reads
@@ -89,17 +107,76 @@ return {
 A plain spread of something already named (`...responseOptions`) needs
 nothing; it is the inline condition that costs the reader.
 
-## Comments
+**A guard clause is one line, without braces.** When the body is a bare
+`return` of a value, keep it on the `if` — the braces add three lines
+around a decision that takes one, and a column of them buries the work the
+method actually does.
 
-Default to none. Only write one when the *why* isn't obvious from the
-code itself — a library quirk with no other trace (undocumented
-behavior, a workaround for a specific bug), a non-obvious ordering
-requirement, or a deliberate trade-off a future reader might otherwise
-"fix." Never restate what the code already says.
+```ts
+// Yes
+if (!wasConsumed) return null;
+if (!token || token.clientId !== clientId) return;
 
-**Exception — everything exported from `src/utils/` carries JSDoc.**
-These are shared helpers called from places that shouldn't need to read
-their source, so they get a real doc block instead of inline commentary:
+// No
+if (!wasConsumed) {
+  return null;
+}
+```
+
+This is for direct returns only. A `throw`, anything that runs a statement
+first, and a return whose value does not fit the line — `return
+backToClient(OAUTH_ERRORS.INVALID_SCOPE, '…')` broken across lines — all
+keep their braces.
+
+## Decorator order on a handler
+
+Nest defines no order, and none of these decorators care: each writes its
+own metadata key, so rearranging them changes nothing at runtime. It is
+therefore a reading convention, and this codebase keeps one — **document,
+guard, route, respond**:
+
+```ts
+@SwaggerDocs(OAUTH_SWAGGER.TOKEN)              // 1. what it is
+@UseGuards(BasicTokenGuard, GrantTypeGuard)    // 2. who may enter
+@Post('token')                                 // 3. where it lives
+@HttpCode(HttpStatus.OK)                       // 4. what comes back
+@Header('Cache-Control', 'no-store')
+```
+
+Class level, same idea: `@ApiTags` then `@Controller`.
+
+**Two places where order is load-bearing, and they are not this list:**
+
+- **Inside `@UseGuards(A, B)`.** Guards run left to right.
+  `BasicTokenGuard, GrantTypeGuard` is not alphabetical: the second reads
+  the `client` the first put on the request. Swapped, the token endpoint
+  fails at request time.
+- **Two decorators writing the same key** — a second `@HttpCode`, say.
+  TypeScript applies decorators bottom-up, so which one survives is a
+  question you should never have to ask. Don't duplicate.
+
+**Only `*.util.ts` and `*.decorator.ts` carry comments**, wherever they
+live — `common/utils/`, `oauth/token/utils/` and `user/user.util.ts`
+today. Everywhere else — services, guards, middlewares, core, entities,
+DTOs — the code stands on its own, with no `//` and no
+doc block. Don't add one back while editing a file, however tempting the
+RFC citation.
+
+The exemption follows the **kind of file**, not the folder: a util is
+called from places that shouldn't have to read its source, so its
+contract is written down. A util that moves into a module keeps its
+JSDoc.
+
+The reasoning that used to live in those comments is in
+[architecture.md](architecture.md), this file, `README.md` and
+`src/core/middlewares/README.md`. **When a change needs explaining, the
+explanation goes there**, where it is read before the code rather than
+after. That is the trade this rule makes: one place to look, kept
+current, instead of rationale scattered across files and drifting.
+
+**Every export of an exempt file carries JSDoc.**
+These are helpers and decorators called from places that shouldn't need
+to read their source, so they get a real doc block:
 
 - a one-line summary of what the function does, then any behaviour worth
   knowing (why a check exists, what is cached, what is deliberately
@@ -124,9 +201,19 @@ explaining, the explanation belongs in the doc block above it.
 - **The API key** (`ADMIN_API_KEY`) comes from the environment only.
 
 Comparisons outside a library must be **constant-time**, through
-`constantTimeEquals` in `@utils/string.util` — `crypto.timingSafeEqual`
+`constantTimeEquals` in `@common/utils/crypto.util` — `crypto.timingSafeEqual`
 behind a length check, not `===`, since a plaintext secret compared with
 `===` leaks itself one character at a time through response latency.
+
+**Every "no" looks the same**, and costs the same. An unknown email and a
+wrong password both leave `/users/verify` as one `UnauthorizedException`
+with one message: a separate "user not found" turns the endpoint into a
+list of which emails are registered. The cost matters as much as the
+status — returning early when there is no user answers in microseconds
+while a wrong password pays the full bcrypt cost factor, and that gap
+alone is the same disclosure. Hash against `DUMMY_PASSWORD_HASH` instead,
+then decide. Splitting the check across several statements is fine; giving
+the branches different answers is not.
 
 **Trade-off, accepted knowingly:** anyone with read access to the
 `clients` collection — a leaked backup, an over-broad database grant —

@@ -9,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # Run: production dependencies and the bundle only. Configuration arrives as
-# environment variables and the signing keys as a mounted `src/secrets/` —
+# environment variables and the signing keys as a mounted `src/core/secrets/` —
 # neither is ever baked into the image.
 FROM node:24-alpine
 WORKDIR /app

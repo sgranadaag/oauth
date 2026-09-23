@@ -1,7 +1,7 @@
 import {
   CLIENT_BASIC_SECURITY,
   ADMIN_KEY_SECURITY,
-} from '@config/swagger.config';
+} from '@core/config/swagger.config';
 
 const RFC_ERROR_SCHEMA = (example: string) => ({
   type: 'object' as const,

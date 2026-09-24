@@ -20,6 +20,9 @@ export class ClientEntity {
   clientSecret: string;
 
   @Column()
+  isPublic: boolean;
+
+  @Column()
   name: string;
 
   @Column()

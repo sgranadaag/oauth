@@ -13,3 +13,13 @@ export interface LoginCredentials {
 export interface LoginResult {
   redirectTo: string;
 }
+
+/**
+ * What a sign-in attempt produced.
+ *
+ * A union rather than a nullable `redirectTo`: on failure there is no URL to
+ * carry, and on success there is no reason — neither state can be built.
+ */
+export type SignInOutcome =
+  | { ok: true; redirectTo: string }
+  | { ok: false; reason: string };

@@ -5,11 +5,13 @@ export interface CreateClientInput {
   allowedScopes: string[];
   redirectUris: string[];
 
+  isPublic?: boolean;
   grantTypes?: string[];
   accessTokenTtlSeconds?: number;
 }
 
 export interface CreateClientResult {
   client: ClientEntity;
+
   plainSecret: string;
 }

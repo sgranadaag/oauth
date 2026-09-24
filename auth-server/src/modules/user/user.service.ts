@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  ConflictException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import {
   DUMMY_PASSWORD_HASH,
   hashPassword,
@@ -14,33 +10,40 @@ import { UserRepository } from '@modules/user/user.repository';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) { }
+  constructor(private readonly userRepository: UserRepository) {}
 
-  async signup(email: string, password: string): Promise<UserEntity> {
-    const existingUser = await this.userRepository.findByEmail(email);
+  async signup(
+    clientId: string,
+    email: string,
+    password: string,
+  ): Promise<UserEntity> {
+    const existingUser = await this.userRepository.findByEmail(clientId, email);
 
     if (existingUser) {
-      throw new ConflictException(`Email ${email} is already registered`);
+      throw new ConflictException(
+        `Email ${email} is already registered for this client`,
+      );
     }
 
     const user = new UserEntity();
     user.id = randomUUID();
+    user.clientId = clientId;
     user.email = email;
     user.passwordHash = await hashPassword(password);
 
-    return this.userRepository.save(user);
+    return this.userRepository.create(user);
   }
 
-  async verifyCredentials(email: string, password: string): Promise<UserEntity> {
-    const user = await this.userRepository.findByEmail(email);
+  async verifyCredentials(
+    clientId: string,
+    email: string,
+    password: string,
+  ): Promise<UserEntity | null> {
+    const user = await this.userRepository.findByEmail(clientId, email);
 
     const passwordHash = user?.passwordHash ?? DUMMY_PASSWORD_HASH;
     const hasValidPassword = await verifyPassword(password, passwordHash);
 
-    if (!user || !hasValidPassword) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    return user;
+    return user && hasValidPassword ? user : null;
   }
 }

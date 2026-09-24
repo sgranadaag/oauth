@@ -51,35 +51,45 @@ never back. A util that needs a module's type is in the wrong folder.
 
 ```
 modules/
-  client/          registered clients and their policy
-  user/            the accounts — the identity side
-  oauth/           the protocol (RFC 6749 / OIDC)
-    code/          authorization requests and one-time codes
-    token/         minting, storing and rotating tokens; the signing keys
-    grant/         one service per grant_type, plus the registry
-    scope/         the scope policy
+  client/                registered clients and their policy
+  user/                  the accounts, scoped to one client
+  oauth/                 the protocol (RFC 6749, no OIDC)
+    oauth.controller.ts  the entry point, and only that
+    flows/               the coordinators, one per conversation
+      signIn/            /authorize and the interaction endpoints
+      tokenExchange/     /token, and one grant per grant_type
+    authorization/       pending requests and one-time codes
+    session/             the session behind the cookie
+    token/               minting, storing and rotating; the signing keys
 ```
 
-| Module | Owns | Exports | Reached by |
-| --- | --- | --- | --- |
-| `client` | `clients`, the secret, `redirectUris`, `allowedScopes`, `grantTypes`, `accessTokenTtlSeconds` | `ClientRepository` | `POST /clients`; `oauth` and `BasicTokenGuard` read it |
-| `user` | `users`, bcrypt hashes | **nothing** | `POST /users/signup`, `POST /users/verify` — over HTTP only |
-| `oauth` | `/authorize`, the interaction endpoints, `/token` dispatch, `/revoke`, `/jwks`, the RFC 6749 §5.2 error body | nothing | the browser, the login app, the client |
-| `oauth/code` | `authorization_requests`, `authorization_codes`, their single-use lifecycle | `CodeService` | `oauth`, `grant` |
-| `oauth/token` | `tokens`, rotation, sessions with a fixed end, JWT signing, the key files | `TokenService`, `TokenRepository` | `oauth`, `grant` |
-| `oauth/grant` | one handler per `grant_type` | every handler | `oauth`, by `ModuleRef` |
-| `oauth/scope` | `narrow(granted, requested)` | `ScopeService` | `oauth`, `grant` |
+**Two kinds of thing live here, and mixing them is what produced a
+manager once already.** An *owner* answers one question and nothing else
+may answer it. A *flow* conducts one conversation and answers nothing —
+it asks the owners and decides only what to do with their answers.
 
-Two boundaries carry most of the design:
+| Owner | Its one question |
+| --- | --- |
+| `client` | does this client exist, and may it do this? |
+| `user` | is this password right, for this client's account? |
+| `oauth/authorization` | a pending intent, and a code spent once |
+| `oauth/session` | is this browser already known, for this client? |
+| `oauth/token` | mint, sign, rotate, revoke |
 
-- **`oauth` decides; the others store and mint.** Whether a request is
-  valid OAuth — the redirect URI, PKCE, the scope, when an ID token is
-  owed — is decided in `oauth`. `code` stores and expires what it is
-  handed; `token` mints what it is told to; neither knows a grant.
-- **`user/` is a neighbour, not a dependency.** It exports nothing and
-  `oauth` never imports it. The login app asks `/users/verify` over HTTP
-  and then tells `oauth` who signed in. Two roles in one process —
-  **don't wire them together**, even though a direct call would compile.
+| Flow | Its conversation | Endpoints |
+| --- | --- | --- |
+| `signIn` | may this start, who is this, here is a code | `/authorize`, `/interactions/*` |
+| `tokenExchange` | here is a claim, here are tokens | `/token` |
+
+**A flow exists only where the conversation has more than one turn.**
+`/revoke` and `/jwks` have no flow: the controller goes straight to the
+owner, because a coordinator that only forwards is a layer that says
+nothing.
+
+**`signIn` never mints a token and `tokenExchange` never sees a login
+page** — neither word appears in the other's file. That is the test that
+the cut is in the right place, and it is worth re-running after any
+change here.
 
 ## Where a file goes inside a module
 
@@ -105,7 +115,7 @@ the shapes the module works in — and those are worth a fixed place to
 look, the same in every module, without counting files first.
 
 **Everything else earns a folder at the second file.** One entity stays
-`client.entity.ts`; two become `entities/`, as in `oauth/code/`. One util
+`client.entity.ts`; two become `entities/`, as in `oauth/authorization/`. One util
 is `<module>.util.ts` (`user.util.ts`); several go to `utils/` named by
 subject (`token/utils/jwt.util.ts`, `keys.util.ts`). The suffix already
 says what a file is, so a folder around a lone one adds nesting and says
@@ -136,21 +146,22 @@ Two wiring consequences, both easy to get wrong:
 
 - **`ModuleRef.get()` needs `{ strict: false }`** to reach a nested
   module's provider, because a strict lookup searches only the host
-  module. `OauthService` resolves grant handlers this way. Without it the
+  module. `TokenExchangeService` resolves grant handlers this way. Without it the
   token endpoint fails at request time, not at build time.
-- **A shared provider cannot live in the parent.** `ScopeService` is
-  needed by `OauthService` and by two grants, and `OauthModule` imports
-  `GrantModule`; providing it in `OauthModule` and exporting it to
-  `GrantModule` would close a cycle that Nest rejects at boot. Hence
-  `scope/` as its own module rather than a `forwardRef`.
+- **A shared provider cannot be exported from the parent.** When two
+  modules need the same provider and one already imports the other,
+  exporting it across closes a cycle that Nest rejects at boot. Declare it
+  in both instead — a stateless provider costs nothing per instance — or,
+  if it is small enough, write it out in each place. **Don't reach for
+  `forwardRef`**: it hides the cycle rather than removing it.
 
 ## An open-ended set is a nested module
 
-`oauth/grant/` is the shape to copy when a set of interchangeable
+`oauth/flows/tokenExchange/` is the shape to copy when a set of interchangeable
 implementations grows over time:
 
 ```
-oauth/grant/
+oauth/flows/tokenExchange/
   grant.module.ts            provides and exports every member
   grant.constants.ts         one name per grant, plus SUPPORTED_GRANT_TYPES
   grant.registry.ts          the set, as data: name -> service
@@ -249,7 +260,7 @@ defines for itself is everyone's.
   the id as it arrives — `undefined` included — and answers `null`
   rather than making its caller guard first: a Mongo filter built from an
   undefined value can end up empty and match the *first* document instead
-  of none (`ClientRepository.findByClientId`). The guard belongs in the
+  of none (`ClientRepository.find`). The guard belongs in the
   layer that builds the query, so no caller can forget it. **It stays a
   `null`, never a throw**: what "not found" means is the caller's to
   decide — a 400 without a redirect in `/authorize`, a 401 in
@@ -285,14 +296,23 @@ something from `oauth` has its responsibility in the wrong place.
   variable: an env var makes the whole server do one thing, which is
   wrong the moment a second client needs another. The token module still
   knows no client — the grant reads the field and passes a number.
-- **What is about an identity provider is configuration, not a client
-  field.** `IDENTITY_PROVIDERS` in `oauth.constants.ts` maps the `idp`
-  parameter of an authorization request to the environment variable
-  holding that provider's sign-in page (`local` → `LOCAL_IDP_LOGIN_URL`).
-  Adding a provider is one entry plus one variable; an unknown `idp` goes
-  back to the client as `invalid_request`. A client does not own a login
-  page: **which** identity is proved is the request's to say, **where**
-  that happens is the provider's.
+- **There is exactly one login app, and it is configuration.**
+  `LOGIN_APP_URL` is where `/oauth/authorize` sends the browser; a client
+  does not own a login page. There was a multi-provider map here (`idp`
+  parameter → one of `IDENTITY_PROVIDERS`) and it was **removed**,
+  because its shape only ever fits a login app this deployment owns: an
+  upstream provider such as Google never calls the interaction endpoints
+  at all.
+
+  **Federating to an external provider is a different flow**, not another
+  entry in a map. There this server becomes a *client* of the upstream
+  one: it redirects the browser to that provider's own `/authorize`,
+  receives the code on a callback endpoint of its own, and exchanges it
+  with its own credentials there. That needs a callback route per
+  provider, client credentials at each, ID token verification against
+  each one's JWKS, and a mapping from the external account to a local
+  `subject`. **None of it is written.** Don't reintroduce the map as a
+  shortcut to it.
 - **`/oauth/authorize` fails in two ways, on purpose.** While the client
   or its `redirect_uri` are unproven, errors are answered on the spot and
   the browser goes nowhere — redirecting to an unverified URL would make
@@ -300,55 +320,71 @@ something from `oauth` has its responsibility in the wrong place.
   goes back to the `redirect_uri` as `error`, `error_description`,
   `state` (RFC 6749 §4.1.2.1). `redirect_uri` is compared by exact string
   match against `ClientEntity.redirectUris`; never relax that to a prefix.
-- **`src/modules/oauth/code/` stores the two short-lived documents of
-  the code flow**: a validated request waiting for sign-in
-  (`CodeRequestEntity`, collection `authorization_requests`, keyed by the
+
+  `SignInService.start` keeps this as **one linear method with the
+  conditions written inline**, each failure returning on the spot. The
+  boundary between the two modes is where the `throw`s stop and the
+  `return buildUrl(redirectUri, …)`s start.
+
+  **Five refactors of this method were tried and reverted**: a pipeline
+  of check functions, an `AuthorizeBuilder`, a `backToClient` closure, a
+  mutable rejection object with a single return, and an extracted
+  `rejectAuthorizeRequest` validator. Don't propose any of them again
+  without the user asking. Two reasons they keep failing:
+
+  - **The steps are not uniform.** Some only validate; others produce a
+    value the next step needs (the client, the redirect URI, the scope).
+    Anything that treats them as a list has to smuggle those values out.
+  - **Reading the checks somewhere else costs more than it saves.** The
+    order is the specification: which failures may redirect depends on
+    what has been proven above them. Split across two files, that order
+    stops being visible, and it is the whole of §4.1.2.1.
+
+  The cost is accepted knowingly: `redirectUri` and `state` are repeated
+  in five `buildUrl` calls. **Every error response must echo `state`**
+  (§4.1.2.1) — it is how the client correlates the callback with the
+  request it started. When adding a sixth failure path, copy an existing
+  block rather than writing the object from scratch.
+- **`src/modules/oauth/authorization/` stores the two short-lived documents
+  of the code flow**: a validated request waiting for sign-in
+  (`RequestEntity`, collection `authorization_requests`, keyed by the
   `interaction` id the sign-in page receives) and the one-time code it
-  turns into (`CodeEntity`, collection `authorization_codes`, keyed by the
-  code value). It owns their lifecycle — creation, expiry, single use —
+  turns into (`CodeValueEntity`, collection `authorization_codes`, keyed by
+  the code value). It owns their lifecycle — creation, expiry, single use —
   and decides nothing about OAuth. Its one repository serves both
-  collections, because the two are stages of one flow and never read
-  apart. **The collection names keep the protocol's wording** while the
-  module is named for what it holds; renaming them is a data migration,
-  and this repo has none.
+  collections, because the two are stages of one flow and never read apart.
 - **Single use is a write, not a read.** A request is claimed by deleting
   it and a code is redeemed by an `updateOne` filtered on
   `consumedAt: null`; the caller whose write changed the document wins.
   A read-then-check would let two simultaneous submits both succeed. A
-  code is spent before its checks run, so a stolen code tried with the
-  wrong PKCE verifier is burned rather than left replayable.
-- **ID tokens are owed only for `openid`.** The `authorization_code` grant
-  asks `TokenService.issueIdToken` for one when the granted scope contains
-  `openid`; the token module signs it (`aud` = `client_id`, `typ: JWT`,
-  `nonce` echoed) without knowing the rule.
-- **Who signed in is told to the oauth module, not checked by it.** The
-  login app (`auth-front`'s server side) verifies the person against
-  `/users/verify` and calls `POST /oauth/interactions/:id/accept` with
-  `{ subject, email }`; `OauthService.acceptInteraction` believes it and
-  issues the code. What makes that safe is `AdminGuard`: both interaction
-  endpoints are behind the provider key, and **`accept` must never become
-  reachable without it** — open, it would hand out codes for any user, no
-  password asked. How a person proves who they are (a password today, MFA
-  later) is the login app's and the `user` module's business and never
-  reaches the oauth module.
-- **`oauth` never calls `user`, though both live here.** The identity
-  side vouches for a person once, at sign-in, through the login app; from
-  there the session is the oauth side's to manage. A refresh checks only
-  its own record, never whether the person still exists: **`UserModule`
-  exports nothing, and `oauth` must not import it**. Wiring the two
-  together would collapse a boundary that is a deployment decision, not a
-  design one — today one process, tomorrow two.
+  code is spent before its checks run, so a stolen code tried from the
+  wrong client is burned rather than left replayable.
+- **`state` is the whole of the client's front-channel protection.** This
+  server implements plain RFC 6749: **no PKCE and no OpenID Connect**, so
+  there is no `code_challenge` binding the exchange and no `id_token` to
+  verify. `state` is generated by the client, echoed back on every answer
+  including the errors (§4.1.2.1), and checked by the client. Dropping it
+  from any redirect removes the only check the client has.
 
-  What bounds a session instead is its **fixed end**: `sessionExpiresAt`,
-  set at sign-in to `SESSION_TTL_SECONDS` and copied unchanged onto every
-  rotated token, whose own `expiresAt` is capped at it. Rotation renews
-  the token, never the session, so the person is sent back through the
-  login app — and vouched for again — at least that often.
+  Both omissions are deliberate, to keep the example to one RFC. **Don't
+  reintroduce either as an improvement** — PKCE is the first thing a real
+  public client would add, but it is a separate spec (RFC 7636) and a
+  separate lesson.
+- **`oauth` owns the accounts.** `SignInService` asks `UserService` to
+  check a password directly: this server is the identity manager, not a
+  broker standing in front of one. There is no login-app credential and no
+  `/users/verify` — the login page is a pure frontend that carries the
+  credentials to `POST /oauth/interactions/:id/login` and holds nothing.
+- **An account belongs to one client.** `UserEntity.clientId`, with a
+  unique index on `(clientId, email)`: the same address under two clients
+  is two unrelated people. The session carries `clientId` too, so it can
+  only ever shortcut the client it was opened for — **this is not SSO**,
+  and calling it that would promise something the data model forbids.
 
-  Ending a user's sessions *before* that end, once the identity side can
-  delete or block users, is a revocation it **pushes** to this server
-  (by `subject`, behind a key — not written yet), never a question this
-  server asks.
+  A session still has a **fixed end** (`sessionExpiresAt`, set at sign-in
+  and copied unchanged onto every rotated token, whose own `expiresAt` is
+  capped at it). Rotation renews the token, never the session, so the
+  person signs in again at least that often.
 - **Minting tokens is `src/modules/oauth/token/`, and it is
   protocol-free.**
   `TokenService.issue({ clientId, userId?, scope, sessionId?,
@@ -361,7 +397,7 @@ something from `oauth` has its responsibility in the wrong place.
   told to**, which is what lets it be read, tested and reused without
   the protocol around it.
 
-  The wire format is applied in exactly one place, `OauthService`'s
+  The wire format is applied in exactly one place, `TokenExchangeService`'s
   mapping of `IssuedTokens` to the §5.1 body. A grant returning
   `access_token` keys, or `TokenService` throwing an `invalid_scope`,
   is that boundary leaking.
@@ -372,7 +408,7 @@ something from `oauth` has its responsibility in the wrong place.
   **Registration is data, not code.** `grant/grant.registry.ts`
   exports `GRANT_TYPES: GrantTypeRegistration[]` — `{ type, service }`
   per grant. `OauthModule` turns every `service` into a provider and
-  `OauthService` dispatches on `type`. **Adding a grant means writing its
+  `TokenExchangeService` dispatches on `type`. **Adding a grant means writing its
   service and appending one entry; nothing else changes.** Because the
   handler set is only known at runtime, it is resolved through
   `ModuleRef` instead of a fixed `inject` list. A `grant_type` with no
@@ -380,31 +416,41 @@ something from `oauth` has its responsibility in the wrong place.
   aren't written yet answer.
 
 - **A grant service owns only what makes its grant different: what
-  the caller presents as proof** — a code and its PKCE verifier, a
+  the caller presents as proof** — a code, a
   refresh token, or the client alone. `handle()` validates that proof —
   throwing an `OauthException` carrying `invalid_grant` when it fails —
-  narrows the scope through `ScopeService`, and hands the result to
+  narrows the scope against its own ceiling, and hands the result to
   `TokenService.issue(...)`. **Deciding what counts as proof stays in the
   grant**; a grant that signs its own token is a grant reimplementing
   `TokenService`.
-- **No oauth endpoint takes a password.** A password is typed only on
-  `auth-front`, and the only endpoint that reads one is `/users/verify`,
-  which `auth-front`'s server side calls. The `password` grant (RFC 6749
-  §4.3) was removed on purpose; don't bring it back unless the user asks.
-- **Every grant narrows a ceiling, none may widen one.**
-  `ScopeService.narrow(ceiling, requested)` is that rule, and the ceiling
-  is the grant's to supply: the client's `allowedScopes` for most, and
-  what the refresh token was issued for on a refresh. Scope policy is an
-  OAuth question, which is why it is here and not in the token module.
-  It stays a service rather than a function so `invalid_scope` is thrown
-  in one place; it holds no repository, because the client arrives
-  already loaded.
+- **No grant takes a password.** The only endpoint that reads one is
+  `POST /oauth/interactions/:id/login`, reached from the login page after
+  the browser has already been redirected there — never from a client.
+  The `password` grant (RFC 6749 §4.3) was removed on purpose: it hands
+  the client the credential the whole flow exists to keep away from it.
+  Don't bring it back unless the user asks.
+- **Every flow narrows a ceiling, none may widen one**, and **each one
+  writes that narrowing out itself.** There is no shared `ScopeService`:
+  it existed, and was removed because the three call sites do not agree
+  on what happens next. `signIn` answers with a redirect, the grants
+  throw — a shared helper had to throw in all three, so the redirect path
+  wrapped it in a `try/catch` and used an exception for control flow.
+
+  The ceiling is the caller's to supply, and it is the part worth reading
+  twice: the client's `allowedScopes` for `/authorize` and
+  `client_credentials`, but **what the refresh token was issued for** on a
+  refresh (RFC 6749 §6). Using `allowedScopes` there would let a session
+  widen itself at every renewal.
+
+  Repeating fifteen lines three times is the accepted cost. If a fourth
+  caller appears, repeat them again before extracting: the duplication is
+  visible and the divergence in failure handling is not.
 - **`BasicTokenGuard` attaches the whole `ClientEntity`, not an id.** It
   has to read that document to verify the secret, so anything needing
   `allowedScopes` downstream would otherwise read the same document a
   second time on every token request. `request.client` is authenticated
   state, never body input, and the client flows from the controller
-  through `OauthService` into each grant. **It stops at the oauth
+  through `TokenExchangeService` into each grant. **It stops at the oauth
   module**: `TokenService` takes `clientId: string`, so the token module
   keeps knowing nothing about domain entities.
 - **Every failure on the token endpoint is an `OauthException`**, which
@@ -503,33 +549,32 @@ lands there because it is shared, stateless and domain-free, and it goes
 into the folder named for what it is.
 
 - `src/common/guards/` — **every** route-level allow/deny guard, without
-  exception. Three today:
-  - `AdminGuard` — the `x-admin-key` provider credential
-    (`ADMIN_API_KEY`), on `POST /clients`, both interaction endpoints and
-    `/users/verify`: everything that is the provider talking to itself.
-    Depends only on the global `ConfigService`, compares through
-    `constantTimeEquals`, and answers **403** — never 401, which on
-    `/users/verify` means wrong credentials.
-  - `GrantTypeGuard` — may this client use the `grant_type` it sent?
-    Only on `POST /oauth/token`, and only **after** `BasicTokenGuard`
-    (`@UseGuards(BasicTokenGuard, GrantTypeGuard)`), since it reads the
-    client that one put on the request. Denies with an `OauthException`
-    (`unauthorized_client`), so the body stays RFC 6749 §5.2. A missing
-    `grant_type` passes through — that is `invalid_request`, which
-    `OauthService` answers. Whether the *server* supports the grant is a
-    different question, and stays with the registry.
+  exception. Two today, and the number matters: a guard earns its place
+  only when it answers *may this request proceed* and nothing more.
+  - `AdminGuard` — the `x-admin-key` credential (`ADMIN_API_KEY`), on
+    `POST /clients`: registering a client is an administrative act, not
+    part of any OAuth flow. Depends only on the global `ConfigService`,
+    compares through `constantTimeEquals`, and answers **403** — never
+    401, so a misconfigured key can never be mistaken for a rejected
+    credential.
+  - `BasicTokenGuard` — authenticates a *client* at `POST /oauth/token`
+    and `POST /oauth/revoke`, via `Authorization: Basic` or, for a public
+    client, `client_id` in the body. A public client that sends a secret
+    is refused: holding one means it is not the client it claims to be.
+    Depends on `ClientRepository`.
 
-    **It cannot guard `/oauth/authorize`**, and that is the spec's doing,
-    not an oversight: there the client is not authenticated by a guard
-    (it arrives as `client_id` in the query) and an `unauthorized_client`
-    has to be *redirected* to the client's `redirect_uri` (§4.1.2.1), not
-    thrown — which needs the client and its redirect URI resolved first.
-    `OauthService.authorize` does that check inline, with the same
-    `DEFAULT_GRANT_TYPES` fallback.
-  - `BasicTokenGuard` — authenticates a *client* via
-    `Authorization: Basic base64(clientId:clientSecret)`, the same
-    credential shape `POST /oauth/token` uses. Depends on
-    `ClientRepository`.
+  **Two former guards were deliberately removed**, and reintroducing
+  either would undo the reason:
+
+  - `AuthorizeClientGuard` resolved the client and redirect URI ahead of
+    `/oauth/authorize`. That split §4.1.2.1 across two files: the guard
+    threw for the unproven half, the service redirected for the rest, and
+    the boundary between the two modes was no longer readable in one
+    place. It lives inline in `SignInService.start` again.
+  - `GrantTypeGuard` checked whether a client held the `grant_type` it
+    sent. It now runs inside `TokenExchangeService.exchange`, beside the
+    lookup that decides whether the *server* supports that grant —
+    two halves of one question that had no reason to sit in two layers.
 
   There is no bearer guard: nothing on this server is a protected
   resource. Verifying an access token is the job of whichever resource
@@ -618,7 +663,7 @@ into the folder named for what it is.
   exists to sign this server's tokens; only `getPublicJwks()` is reached
   from outside it, by `oauth.service.ts` for `GET /oauth/jwks`.
   - `keys.util.ts` — the **only** place the signing key files are read,
-    from `src/core/secrets/` (the PEMs are a deployment artifact, which
+    from `secrets/` (the PEMs are a deployment artifact, which
     is why they sit in `core/` while the code reading them does not).
     Exposes `getPrivateKeyPem()`, `getPublicKeyPem()`,
     `getSigningKeyId()` (the `kid`: the key's RFC 7638 thumbprint) and
@@ -631,7 +676,7 @@ into the folder named for what it is.
     whoever accepts the token — the client for its ID token, a resource
     server for access tokens — against `GET /oauth/jwks`.
 
-  `src/core/secrets/` holds only the two PEM files — there is no second key
+  `secrets/` holds only the two PEM files — there is no second key
   format on disk to drift.
 - `src/core/config/` — construction/configuration functions that take their
   dependencies and return a config object: `mongoConfig` for TypeORM.

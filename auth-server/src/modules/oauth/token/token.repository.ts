@@ -10,11 +10,11 @@ export class TokenRepository {
     private readonly repository: MongoRepository<TokenEntity>,
   ) {}
 
-  save(token: TokenEntity): Promise<TokenEntity> {
+  create(token: TokenEntity): Promise<TokenEntity> {
     return this.repository.save(token);
   }
 
-  findById(id: string): Promise<TokenEntity | null> {
+  find(id: string): Promise<TokenEntity | null> {
     return this.repository.findOneBy({ id });
   }
 
@@ -27,7 +27,7 @@ export class TokenRepository {
     return result.modifiedCount === 1;
   }
 
-  async deleteBySessionId(sessionId: string): Promise<void> {
+  async removeBySessionId(sessionId: string): Promise<void> {
     await this.repository.deleteMany({ sessionId });
   }
 }

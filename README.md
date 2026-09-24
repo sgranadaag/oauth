@@ -195,9 +195,8 @@ two above are the default, and a service wanting `client_credentials` has
 to ask for it. Add `"accessTokenTtlSeconds": 900` to give this client
 shorter access tokens than the server default.
 
-Where people sign in is not a client setting: `/oauth/authorize` takes an
-optional `idp` naming an identity provider (`local` by default), and the
-server resolves it to that provider's page from its own configuration.
+Where people sign in is not a client setting: the server has one login
+app, configured as `LOGIN_APP_URL`.
 
 **4. The two front ends:**
 

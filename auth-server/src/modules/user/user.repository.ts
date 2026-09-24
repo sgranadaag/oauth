@@ -10,11 +10,11 @@ export class UserRepository {
     private readonly repository: MongoRepository<UserEntity>,
   ) {}
 
-  save(user: UserEntity): Promise<UserEntity> {
+  create(user: UserEntity): Promise<UserEntity> {
     return this.repository.save(user);
   }
 
-  findByEmail(email: string): Promise<UserEntity | null> {
-    return this.repository.findOneBy({ email });
+  findByEmail(clientId: string, email: string): Promise<UserEntity | null> {
+    return this.repository.findOneBy({ clientId, email });
   }
 }

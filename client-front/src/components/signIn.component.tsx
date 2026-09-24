@@ -9,9 +9,10 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 interface SignInProps {
   error?: string;
+  onSignIn: () => void;
 }
 
-export const SignIn = ({ error }: SignInProps): ReactElement => (
+export const SignIn = ({ error, onSignIn }: SignInProps): ReactElement => (
   <section className="card">
     <h1 className="card__title">Client app</h1>
     <p className="card__description">
@@ -19,10 +20,11 @@ export const SignIn = ({ error }: SignInProps): ReactElement => (
       back with a one-time code this app exchanges for tokens.
     </p>
 
-    {/* A plain link, not a fetch: the flow starts with a full navigation. */}
-    <a className="form__submit form__submit--link" href="/api/auth/login">
+    {/* The flow still leaves this page entirely: the person has to reach the
+        provider's own origin to type a password. */}
+    <button className="form__submit form__submit--wide" type="button" onClick={onSignIn}>
       Sign in with the provider
-    </a>
+    </button>
 
     {error && (
       <p className="message message--error">

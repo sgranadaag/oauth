@@ -1,19 +1,15 @@
 import type { ReactElement } from "react";
 
+import { MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE } from "@constants/auth.constants";
 import type { Session } from "@shared/auth.types";
-
-const MILLISECONDS_PER_SECOND = 1000;
-const SECONDS_PER_MINUTE = 60;
 
 interface SessionCardProps {
   session: Session;
-  // A renewal that failed while the session is still usable — the provider
-  // was unreachable, say. A dead session shows its error on the sign-in card.
+  onRenew: () => void;
+  onSignOut: () => void;
   error?: string;
 }
 
-// How long this access token has left, as of this render. Renewing re-renders
-// the page, so the figure jumps back up — which is the point of showing it.
 const describeRemaining = (expiresAt: number): string => {
   const remainingSeconds = Math.round((expiresAt - Date.now()) / MILLISECONDS_PER_SECOND);
   if (remainingSeconds <= 0) {
@@ -26,10 +22,18 @@ const describeRemaining = (expiresAt: number): string => {
   return `${minutes} min ${seconds} s left`;
 };
 
-export const SessionCard = ({ session, error }: SessionCardProps): ReactElement => (
+export const SessionCard = ({
+  session,
+  error,
+  onRenew,
+  onSignOut,
+}: SessionCardProps): ReactElement => (
   <section className="card">
     <h1 className="card__title">Signed in</h1>
-    <p className="card__description">As {session.email}, from the provider&apos;s ID token.</p>
+    <p className="card__description">
+      Subject {session.subject}, read from the access token after verifying its
+      signature.
+    </p>
 
     <dl className="session">
       <dd className="session__item">Scope: {session.scope}</dd>
@@ -44,14 +48,11 @@ export const SessionCard = ({ session, error }: SessionCardProps): ReactElement 
       <dd className="session__item session__item--token">{session.refreshToken}</dd>
     </dl>
 
-    {/* Renewing never involves the person: the exchange happens server side,
-        with this app's secret. The provider rotates the refresh token, so the
-        one shown above changes too. */}
-    <form action="/api/auth/refresh" method="post">
-      <button className="form__submit form__submit--wide" type="submit">
-        Renew token
-      </button>
-    </form>
+    {/* Renewing never involves the person: a public client sends only the
+        refresh token. The provider rotates it, so the one above changes too. */}
+    <button className="form__submit form__submit--wide" type="button" onClick={onRenew}>
+      Renew token
+    </button>
 
     {error && (
       <p className="message message--error">
@@ -59,10 +60,12 @@ export const SessionCard = ({ session, error }: SessionCardProps): ReactElement 
       </p>
     )}
 
-    <form action="/api/auth/logout" method="post">
-      <button className="form__submit form__submit--secondary" type="submit">
-        Sign out
-      </button>
-    </form>
+    <button
+      className="form__submit form__submit--secondary"
+      type="button"
+      onClick={onSignOut}
+    >
+      Sign out
+    </button>
   </section>
 );

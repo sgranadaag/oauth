@@ -4,8 +4,6 @@ export const DEFAULT_AUDIENCE = 'urn:oauth:default';
 
 export const ACCESS_TOKEN_TTL_SECONDS = 3600;
 
-export const ID_TOKEN_TTL_SECONDS = 3600;
-
 export const REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60;
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;

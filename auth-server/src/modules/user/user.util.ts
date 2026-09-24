@@ -2,7 +2,7 @@ import * as bcrypt from 'bcryptjs';
 
 /**
  * bcrypt cost factor. 12 is roughly 600ms per hash on current hardware —
- * slow on purpose, and the reason `test/jest-e2e.json` raises Jest's timeout.
+ * slow on purpose, and the only place this number is written down.
  */
 const SALT_ROUNDS = 12;
 

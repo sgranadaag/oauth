@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 /**
  * Generates an unguessable value for a bearer credential: a refresh token, an
@@ -14,25 +14,6 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
  */
 export function createRandomValue(byteLength: number): string {
   return randomBytes(byteLength).toString('base64url');
-}
-
-/**
- * SHA-256 of a value, base64url-encoded.
- *
- * Today this derives the PKCE `code_challenge` from a `code_verifier`:
- * RFC 7636 §4.2's `BASE64URL(SHA256(ASCII(code_verifier)))`. PKCE's `plain`
- * method is not supported anywhere in this server — it would put the secret
- * itself on the front channel.
- *
- * **The input is read as ASCII**, which is the RFC's encoding and not an
- * incidental default: the digest has to match byte for byte what the client
- * computed. A caller hashing non-ASCII text would not get what it expects.
- *
- * @param value - The value to hash.
- * @returns The digest, base64url-encoded — safe in a URL or a form body.
- */
-export function sha256Base64Url(value: string): string {
-  return createHash('sha256').update(value, 'ascii').digest('base64url');
 }
 
 /**

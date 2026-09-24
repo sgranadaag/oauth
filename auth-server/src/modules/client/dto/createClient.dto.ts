@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -9,7 +10,7 @@ import {
   IsUrl,
   Min,
 } from 'class-validator';
-import { SUPPORTED_GRANT_TYPES } from '@modules/oauth/grant/grant.constants';
+import { SUPPORTED_GRANT_TYPES } from '@modules/oauth/flows/tokenExchange/grant.constants';
 import { MIN_ACCESS_TOKEN_TTL_SECONDS } from '@modules/client/client.constants';
 import { CLIENT_PROPERTY_SWAGGER } from '@modules/client/client.swagger';
 
@@ -29,6 +30,11 @@ export class CreateClientDto {
   @IsArray()
   @IsUrl({ require_tld: false }, { each: true })
   redirectUris?: string[];
+
+  @ApiProperty(CLIENT_PROPERTY_SWAGGER.IS_PUBLIC)
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 
   @ApiProperty(CLIENT_PROPERTY_SWAGGER.GRANT_TYPES)
   @IsOptional()

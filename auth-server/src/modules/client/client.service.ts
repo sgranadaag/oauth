@@ -16,21 +16,23 @@ export class ClientService {
     name,
     allowedScopes,
     redirectUris,
+    isPublic,
     grantTypes,
     accessTokenTtlSeconds,
   }: CreateClientInput): Promise<CreateClientResult> {
-    const clientSecret = randomUUID();
+    const clientSecret = isPublic ? '' : randomUUID();
 
     const client = new ClientEntity();
     client.id = randomUUID();
     client.clientSecret = clientSecret;
+    client.isPublic = isPublic ?? false;
     client.name = name;
     client.allowedScopes = allowedScopes;
     client.redirectUris = redirectUris;
     client.grantTypes = grantTypes ?? DEFAULT_GRANT_TYPES;
     client.accessTokenTtlSeconds = accessTokenTtlSeconds ?? null;
 
-    const saved = await this.clientRepository.save(client);
+    const saved = await this.clientRepository.create(client);
 
     return { client: saved, plainSecret: clientSecret };
   }

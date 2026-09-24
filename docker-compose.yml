@@ -1,16 +1,18 @@
-# The whole stack: MongoDB and the four projects, each built from its own
-# Dockerfile. Secrets and keys come from each project's .env (copy
-# .env.example first). Only the addresses that change inside Docker are
-# overridden here: container-to-container calls use service names, while
-# everything the browser follows (issuer, redirect URIs, the login page)
-# stays on localhost, because the browser runs on the host.
+# The whole stack: MongoDB and the three projects, each built from its own
+# Dockerfile. Copy every .env.example to .env first.
+#
+# The two front ends are **pure browser apps**: nothing they do runs in their
+# container except serving files, so every address they hold is the one the
+# browser uses — `localhost:3000`, never `auth-server:3000`. That is also why
+# they arrive as `args` and not `environment`: Next inlines `NEXT_PUBLIC_*`
+# at build time, and a runtime variable would silently be ignored.
 
 name: oauth
 
 services:
   mongo:
     image: mongo:8
-    # The port every .env expects, so the servers reach it whether they run
+    # The port every .env expects, so the server reaches it whether it runs
     # here or on the host. Change the left side if a local MongoDB owns it.
     ports:
       - "27017:27017"
@@ -22,53 +24,62 @@ services:
       timeout: 5s
       retries: 20
 
-  # Writes auth-server/src/core/secrets/*.pem once, if they are not there yet, and
-  # exits. The keys stay on the host and are mounted, never baked into an image.
+  # Writes auth-server/secrets/*.pem once, if they are not there yet,
+  # and exits. The keys stay on the host and are mounted, never baked into an
+  # image.
   signing-keys:
     build:
       context: ./auth-server
       target: build
-    command: sh -c "test -f src/core/secrets/private.pem || npm run generate-signing-keys"
+    command: sh -c "test -f secrets/private.pem || npm run generate-signing-keys"
     volumes:
-      - ./auth-server/src/core/secrets:/app/src/core/secrets
-
+      - ./auth-server/secrets:/app/secrets
 
   auth-server:
     build: ./auth-server
     env_file: ./auth-server/.env
     environment:
       MONGO_URI: mongodb://mongo:27017
-      # OIDC_ISSUER is browser-facing, so it stays on localhost. Where to
-      # sign in is not configured here at all: it is each client's loginUrl.
+      # Both front ends call this server from the browser, so their origins
+      # have to be listed explicitly — `credentials: true` forbids `*`.
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3003
+      # Browser-facing, so they stay on localhost.
+      OIDC_ISSUER: http://localhost:3000
+      LOGIN_APP_URL: http://localhost:3003/login
     ports:
       - "3000:3000"
     volumes:
-      - ./auth-server/src/core/secrets:/app/src/core/secrets:ro
+      - ./auth-server/secrets:/app/secrets:ro
     depends_on:
       mongo:
         condition: service_healthy
       signing-keys:
         condition: service_completed_successfully
 
-  # The login app: its server side calls the auth server by name.
+  # The login page. It holds no credential: it reads the pending interaction
+  # and posts the typed password straight to the auth server.
   auth-front:
-    build: ./auth-front
-    env_file: ./auth-front/.env
-    environment:
-      AUTH_SERVER_URL: http://auth-server:3000
+    build:
+      context: ./auth-front
+      args:
+        NEXT_PUBLIC_AUTH_SERVER_URL: http://localhost:3000
     ports:
       - "3003:3003"
     depends_on:
       - auth-server
 
-  # The token exchange goes to the auth server by name; the authorize redirect
-  # sends the browser to the published port.
+  # A public client: no secret, so `client_id` is all it carries. Put the id
+  # `POST /clients` returned in NEXT_PUBLIC_OAUTH_CLIENT_ID and rebuild — it is
+  # baked into the bundle, not read at start.
   client-front:
-    build: ./client-front
-    env_file: ./client-front/.env
-    environment:
-      AUTH_SERVER_URL: http://auth-server:3000
-      AUTH_SERVER_PUBLIC_URL: http://localhost:3000
+    build:
+      context: ./client-front
+      args:
+        NEXT_PUBLIC_AUTH_SERVER_URL: http://localhost:3000
+        NEXT_PUBLIC_OAUTH_ISSUER: http://localhost:3000
+        NEXT_PUBLIC_OAUTH_CLIENT_ID: ""
+        NEXT_PUBLIC_OAUTH_REDIRECT_URI: http://localhost:3001/callback
+        NEXT_PUBLIC_OAUTH_SCOPE: read write
     ports:
       - "3001:3001"
     depends_on:

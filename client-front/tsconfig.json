@@ -23,6 +23,15 @@
       ],
       "@shared/*": [
         "./src/types/*"
+      ],
+      "@constants/*": [
+        "./src/constants/*"
+      ],
+      "@utils/*": [
+        "./src/utils/*"
+      ],
+      "@services/*": [
+        "./src/services/*"
       ]
     },
     "plugins": [

@@ -1,6 +1,5 @@
 import {
   CLIENT_BASIC_SECURITY,
-  ADMIN_KEY_SECURITY,
 } from '@core/config/swagger.config';
 
 const RFC_ERROR_SCHEMA = (example: string) => ({
@@ -23,16 +22,13 @@ export const OAUTH_SWAGGER = {
         '`redirect_uri` (must match one registered for the client exactly), ' +
         '`scope` (include `openid` for an ID token), `state`, `nonce`, ' +
         '`code_challenge` and `code_challenge_method=S256` — PKCE is ' +
-        'mandatory. `idp` is optional and not from the RFC: it names which ' +
-        'identity provider should authenticate the person (`local` by ' +
-        'default), and the server resolves it to that provider’s sign-in ' +
-        'page.\n\n' +
+        'mandatory.\n\n' +
         'On success it redirects to the provider login page with an ' +
         '`interaction` id. If the client or its redirect_uri cannot be ' +
         'verified it answers 400 here and redirects nowhere; any later error ' +
         'is sent back to the redirect_uri as `error`, `error_description` and ' +
         '`state` — `unauthorized_client` when the client is not registered ' +
-        'for `authorization_code`, `invalid_request` for an unknown `idp`.',
+        'for `authorization_code`.',
     },
     responses: {
       302: { description: 'To the login page, or back to the client with an error.' },
@@ -45,36 +41,42 @@ export const OAUTH_SWAGGER = {
 
   INTERACTION: {
     operation: {
-      summary: 'Describe a pending sign-in (provider login app only)',
+      summary: 'Describe a pending sign-in',
       description:
         'What the login page shows while the person decides: which client is ' +
-        'asking and for which scopes.',
+        'asking and for which scopes.\n\n' +
+        'Open on purpose: the login page is a pure frontend and holds no ' +
+        'credential. Knowing the id reveals only a client name and a scope ' +
+        'list, and the id is unguessable, single-use and short-lived — ' +
+        'everything that decides where the code goes stays here.',
     },
-    security: ADMIN_KEY_SECURITY,
     params: [{ name: 'interactionId', description: 'From the login page URL.' }],
     responses: {
       200: { description: 'The client name and the scope being requested.' },
-      403: { description: 'Missing or wrong admin key.' },
       404: { description: 'Unknown or expired interaction.' },
     },
   },
 
-  INTERACTION_ACCEPT: {
+  INTERACTION_LOGIN: {
     operation: {
-      summary: 'Complete a pending sign-in (provider login app only)',
+      summary: 'Complete a pending sign-in with credentials',
       description:
-        'The login app has already checked the person with the identity ' +
-        'provider and says who signed in: `subject` (the user id) and ' +
-        '`email`. This server believes it on the strength of the admin key and ' +
-        'never sees how the person proved it. A single-use code is issued and ' +
-        'the answer says where to send the browser: the client redirect_uri, ' +
-        'with `code` and `state`.',
+        'Called by the login page from the browser, with the email and ' +
+        'password the person typed. This server owns the accounts, so it ' +
+        'checks them itself — there is no credential on the caller, which is ' +
+        'why the login page can be a pure frontend.\n\n' +
+        'On success it issues a single-use code, answers where to send the ' +
+        'browser (`{ redirectTo }`), and sets an **httpOnly SSO session ' +
+        'cookie** on this origin. The next authorization request that arrives ' +
+        'with that cookie skips this page entirely — that is what makes one ' +
+        'sign-in serve every client of this provider.\n\n' +
+        'A wrong email and a wrong password answer the same 401: telling ' +
+        'them apart would list which emails are registered.',
     },
-    security: ADMIN_KEY_SECURITY,
     params: [{ name: 'interactionId', description: 'From the login page URL.' }],
     responses: {
       200: { description: '`{ redirectTo }` — back to the client with the code.' },
-      403: { description: 'Missing or wrong admin key.' },
+      401: { description: 'Wrong email or password.' },
       404: { description: 'Unknown, expired or already completed interaction.' },
     },
   },

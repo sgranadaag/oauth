@@ -1,38 +1,46 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 
 import { LoginForm } from "@components/loginForm.component";
 import { Notice } from "@components/notice.component";
+import { findInteraction } from "@services/interaction.service";
 import type { InteractionDetails } from "@shared/interaction.types";
 
-type LoginPageProps = { searchParams: Promise<{ interaction?: string }> };
 
 // GET /login?interaction=<id> — where /oauth/authorize sends the browser. The
 // URL carries nothing but the interaction id: who is asking, for which scopes
-// and where the code goes are looked up server side, so editing the address
+// and where the code goes are looked up on the server, so editing the address
 // bar changes nothing.
-const LoginPage = async ({ searchParams }: LoginPageProps): Promise<ReactElement> => {
-  const { AUTH_SERVER_URL = "http://localhost:3000", AUTH_SERVER_ADMIN_KEY = "" } = process.env;
-  const { interaction } = await searchParams;
+//
+// This app is a pure frontend: it holds no credential of any kind, so the
+// lookup is a plain public read from the browser.
+const LoginPage = (): ReactElement => {
+  const [interactionId, setInteractionId] = useState<string | null>(null);
+  const [details, setDetails] = useState<InteractionDetails | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Ask the auth server about the pending sign-in, with this app's key. Only
-  //    a 404 is a dead link; any other failure is this app's, and throws.
-  let details: InteractionDetails | null = null;
-  if (interaction) {
-    const interactionUrl = new URL(`/oauth/interactions/${encodeURIComponent(interaction)}`, AUTH_SERVER_URL);
-    const response = await fetch(interactionUrl, {
-      headers: { "x-admin-key": AUTH_SERVER_ADMIN_KEY },
-      cache: "no-store",
-    });
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("interaction");
+    setInteractionId(id);
 
-    if (response.ok) {
-      details = (await response.json()) as InteractionDetails;
-    } else if (response.status !== 404) {
-      throw new Error(`auth server answered ${response.status}`);
+    if (!id) {
+      setIsLoading(false);
+      return;
     }
+
+    void (async () => {
+      setDetails(await findInteraction(id));
+      setIsLoading(false);
+    })();
+  }, []);
+
+  if (isLoading) {
+    return <Notice title="Loading…" message="Looking up this sign-in." />;
   }
 
-  // 2. No id, or a dead one: there is nothing to sign in to.
-  if (!interaction || !details) {
+  if (!interactionId || !details) {
     return (
       <Notice
         title="This sign-in link is not valid"
@@ -41,8 +49,7 @@ const LoginPage = async ({ searchParams }: LoginPageProps): Promise<ReactElement
     );
   }
 
-  // 3. Show who is asking and for what.
-  return <LoginForm interactionId={interaction} {...details} />;
+  return <LoginForm interactionId={interactionId} {...details} />;
 };
 
 export default LoginPage;

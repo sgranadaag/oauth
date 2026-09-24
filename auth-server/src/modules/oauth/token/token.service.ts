@@ -2,14 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ENV } from '@core/config/env.config';
-import { signAccessToken, signIdToken } from '@modules/oauth/token/utils/jwt.util';
+import { signAccessToken } from '@modules/oauth/token/utils/jwt.util';
 import { createRandomValue } from '@common/utils/crypto.util';
 import { secondsFromNow } from '@common/utils/date.util';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   DEFAULT_AUDIENCE,
   DEFAULT_ISSUER,
-  ID_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_BYTES,
   REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_TYPE,
@@ -19,7 +18,6 @@ import { TokenEntity } from '@modules/oauth/token/token.entity';
 import { TokenRepository } from '@modules/oauth/token/token.repository';
 import type {
   IssuedTokens,
-  IssueIdTokenInput,
   IssueTokenInput,
 } from '@modules/oauth/token/interfaces/issueToken.interface';
 
@@ -69,24 +67,11 @@ export class TokenService {
     return issued;
   }
 
-  issueIdToken({ clientId, userId, email, nonce }: IssueIdTokenInput): string {
-    const nonceClaim = nonce ? { nonce } : {};
-
-    return signIdToken(
-      { sub: userId, email, ...nonceClaim },
-      {
-        issuer: this.issuer(),
-        clientId,
-        expiresInSeconds: ID_TOKEN_TTL_SECONDS,
-      },
-    );
-  }
-
   async revokeSession(tokenId: string, clientId: string): Promise<void> {
-    const token = await this.tokenRepository.findById(tokenId);
+    const token = await this.tokenRepository.find(tokenId);
     if (!token || token.clientId !== clientId) return;
 
-    await this.tokenRepository.deleteBySessionId(token.sessionId);
+    await this.tokenRepository.removeBySessionId(token.sessionId);
   }
 
   private async issueRefreshToken({
@@ -121,7 +106,7 @@ export class TokenService {
     );
     token.consumedAt = null;
 
-    await this.tokenRepository.save(token);
+    await this.tokenRepository.create(token);
 
     return token.id;
   }

@@ -2,13 +2,19 @@
 
 import { useState, type FormEvent, type ReactElement } from "react";
 
-import type { InteractionDetails, LoginResult } from "@shared/interaction.types";
+import {
+  INTERACTION_EXPIRED,
+  INVALID_CREDENTIALS,
+} from "@constants/interaction.constants";
+import { signIn } from "@services/interaction.service";
+import type { InteractionDetails } from "@shared/interaction.types";
 
-// The route answers each outcome the person must tell apart with its own
-// status. Anything else — a 502, a network failure — is "unavailable".
-const FAILURE_MESSAGES: Record<number, string> = {
-  401: "Wrong email or password.",
-  404: "This sign-in link has expired. Go back to the application and start again.",
+// What each reason from the service reads like to the person. Anything not
+// listed — an unreachable provider, a 5xx — falls back to the last line.
+const FAILURE_MESSAGES: Record<string, string> = {
+  [INVALID_CREDENTIALS]: "Wrong email or password.",
+  [INTERACTION_EXPIRED]:
+    "This sign-in link has expired. Go back to the application and start again.",
 };
 const UNAVAILABLE_MESSAGE = "The provider is not available right now. Try again in a moment.";
 
@@ -27,30 +33,18 @@ export const LoginForm = ({ interactionId, clientName, scope }: LoginFormProps):
     setIsSubmitting(true);
     setError(null);
 
-    try {
-      // 1. Hand the credentials to this app's own route, same origin. It is
-      //    the server side that checks them; this page never judges a password.
-      const response = await fetch(`/api/interactions/${encodeURIComponent(interactionId)}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+    const outcome = await signIn(interactionId, { email, password });
 
-      // 2. Wrong password or dead link: say which, and let the person act on it.
-      if (!response.ok) {
-        setError(FAILURE_MESSAGES[response.status] ?? UNAVAILABLE_MESSAGE);
-        setIsSubmitting(false);
-        return;
-      }
-
-      // 3. Back to the client, carrying the code. A full navigation, not a
-      //    client-side route change: the destination is another application.
-      const { redirectTo } = (await response.json()) as LoginResult;
-      window.location.assign(redirectTo);
-    } catch {
-      setError(UNAVAILABLE_MESSAGE);
+    // Wrong password or dead link: say which, and let the person act on it.
+    if (!outcome.ok) {
+      setError(FAILURE_MESSAGES[outcome.reason] ?? UNAVAILABLE_MESSAGE);
       setIsSubmitting(false);
+      return;
     }
+
+    // Back to the client, carrying the code. A full navigation, not a
+    // client-side route change: the destination is another application.
+    window.location.assign(outcome.redirectTo);
   };
 
   return (

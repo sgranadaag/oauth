@@ -4,3 +4,10 @@ import type { ClientEntity } from '@modules/client/client.entity';
 export interface BasicTokenRequest extends Request {
   client: ClientEntity;
 }
+
+export interface AuthorizeRequest extends Request {
+  client: ClientEntity;
+  redirectUri: string;
+
+  cookies: Record<string, string | undefined>;
+}

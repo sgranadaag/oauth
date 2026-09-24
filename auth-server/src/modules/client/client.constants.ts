@@ -1,7 +1,7 @@
 import {
   AUTHORIZATION_CODE_GRANT_TYPE,
   REFRESH_TOKEN_GRANT_TYPE,
-} from '@modules/oauth/grant/grant.constants';
+} from '@modules/oauth/flows/tokenExchange/grant.constants';
 
 export const DEFAULT_GRANT_TYPES: string[] = [
   AUTHORIZATION_CODE_GRANT_TYPE,

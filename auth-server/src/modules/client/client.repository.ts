@@ -10,11 +10,11 @@ export class ClientRepository {
     private readonly typeOrmRepository: MongoRepository<ClientEntity>,
   ) {}
 
-  save(client: ClientEntity): Promise<ClientEntity> {
+  create(client: ClientEntity): Promise<ClientEntity> {
     return this.typeOrmRepository.save(client);
   }
 
-  async findByClientId(clientId?: string): Promise<ClientEntity | null> {
+  async find(clientId?: string): Promise<ClientEntity | null> {
     if (!clientId) return null
     return this.typeOrmRepository.findOneBy({ id: clientId });
   }

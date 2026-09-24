@@ -8,6 +8,7 @@ import {
 import type { ObjectId } from 'mongodb';
 
 @Entity('users')
+@Index(['clientId', 'email'], { unique: true })
 export class UserEntity {
   @ObjectIdColumn()
   _id: ObjectId;
@@ -16,7 +17,9 @@ export class UserEntity {
   @Column()
   id: string;
 
-  @Index({ unique: true })
+  @Column()
+  clientId: string;
+
   @Column()
   email: string;
 

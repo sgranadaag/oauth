@@ -27,14 +27,14 @@ and return the value. An early return on its own line needs no braces.
 
 ```ts
 // Yes
-async findByClientId(clientId?: string): Promise<ClientEntity | null> {
+async find(clientId?: string): Promise<ClientEntity | null> {
   if (!clientId) return null;
 
   return this.typeOrmRepository.findOneBy({ id: clientId });
 }
 
 // No — a Promise where a value would do
-findByClientId(clientId?: string): Promise<ClientEntity | null> {
+find(clientId?: string): Promise<ClientEntity | null> {
   if (!clientId) return Promise.resolve(null);
   ...
 }
@@ -125,8 +125,8 @@ if (!wasConsumed) {
 
 This is for direct returns only. A `throw`, anything that runs a statement
 first, and a return whose value does not fit the line — `return
-backToClient(OAUTH_ERRORS.INVALID_SCOPE, '…')` broken across lines — all
-keep their braces.
+buildUrl(redirectUri, { … })` broken across lines, as in
+`OauthService.authorize` — all keep their braces.
 
 ## Decorator order on a handler
 
@@ -155,8 +155,81 @@ Class level, same idea: `@ApiTags` then `@Controller`.
   TypeScript applies decorators bottom-up, so which one survives is a
   question you should never have to ask. Don't duplicate.
 
+## CRUD methods have fixed names
+
+**A method that is plainly a CRUD operation uses the standard name**, in
+every repository and every service, with no synonyms invented per module:
+
+| Operation | Name |
+| --- | --- |
+| Read one, by the entity's own `id` | `find` |
+| Read many | `findAll` |
+| Write a new one | `create` |
+| Change an existing one | `update` |
+| Delete one | `remove` |
+
+Don't write `findById`, `getOne`, `fetch`, `store`, `save`, `deleteById`
+or `destroy` for these. The id is the only thing `find` ever takes, so
+naming it in the method says nothing; and a reader who has learned one
+repository should not have to relearn the next.
+
+**A lookup by anything other than the id keeps saying so** —
+`UserRepository.findByEmail`. That is not a synonym for `find`, it is a
+different question. `ClientRepository.find` is *not* one of these:
+`ClientEntity.id` **is** the `client_id`, so it is the ordinary case.
+
+**A repository serving two entities names which one** —
+`CodeRepository` has `createRequest`/`findRequest` and
+`createCode`/`findCode`, because one bare `find` could not say. The verb
+is still the standard one; only the noun is added.
+
+The library's own API is not covered by any of this: inside a repository,
+`this.typeOrmRepository.save(...)` stays `save`.
+
+**A method that carries domain meaning keeps its own name**, and this is
+the part not to over-apply. `claimRequest`, `consumeCode`, `revokeSession`
+and `rotate` are not CRUD dressed up: each one names a rule — single use,
+rotation, the end of a session — that `update` or `remove` would erase.
+The test: **would `update` tell the reader what just became true?** If
+not, the domain name stays.
+
+## Method order inside a class
+
+**Group methods by what they solve, and order the groups the way a
+request moves through them** — not alphabetically, not
+public-then-private, not the order the controller happens to declare its
+routes.
+
+**A group's private helpers sit inside the group**, right after the
+public methods that call them. Don't sweep every private to the bottom
+of the class: that separates each helper from its only caller and turns
+the end of the file into an unrelated pile.
+
+`OauthService` is the shape:
+
+```
+authorize                     ─┐
+describeInteraction            │  front channel: how a sign-in starts
+acceptInteraction              │  and turns into a code
+private getActiveRequest      ─┘
+
+issueTokens                   ─┐
+revokeSession                  │  token endpoint: what a client exchanges
+private toTokenResponse       ─┘
+
+jwks                             neither: the verification half
+```
+
+Reading the file top to bottom then walks the protocol in the order a
+client does. A method belonging to no group goes last, on its own —
+resist filing it under the nearest heading. When a group outgrows what
+one class should hold, that is the signal to split the class, not to add
+a fourth group.
+
+## Comments
+
 **Only `*.util.ts` and `*.decorator.ts` carry comments**, wherever they
-live — `common/utils/`, `oauth/token/utils/` and `user/user.util.ts`
+live — `common/utils/`, `oauth/submodules/token/utils/` and `user/user.util.ts`
 today. Everywhere else — services, guards, middlewares, core, entities,
 DTOs — the code stands on its own, with no `//` and no
 doc block. Don't add one back while editing a file, however tempting the

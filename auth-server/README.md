@@ -63,14 +63,12 @@ Needs MongoDB:
 ```bash
 cp .env.example .env          # ADMIN_API_KEY must match AUTH_SERVER_ADMIN_KEY in auth-front/.env
 npm i
-npm run generate-signing-keys # first time: writes src/core/secrets/*.pem
+npm run generate-signing-keys # first time: writes secrets/*.pem
 npm run start:dev             # http://localhost:3000
 ```
 
-`LOCAL_IDP_LOGIN_URL` is where the `local` identity provider signs people
-in; an authorization request picks a provider with `idp=<name>` and the
-server resolves it here, so another provider is one entry in
-`IDENTITY_PROVIDERS` plus its own variable. `ADMIN_API_KEY` is the
+`LOGIN_APP_URL` is where the provider signs people in — one login app,
+not a per-client or per-request choice. `ADMIN_API_KEY` is the
 provider's own credential — it registers clients,
 opens the interaction endpoints and `/users/verify`, and the login app
 presents it too. A wrong one is a **403**, never a 401, so a
@@ -82,9 +80,9 @@ misconfiguration cannot pass for a wrong password.
 src/core/                   config, the database connection, the request logger, the signing-key files
 src/common/                 guards (Basic, admin key, grant), decorators, generic utils, shared interfaces
 src/modules/oauth/          the protocol: authorize, interactions, token endpoint, scopes, errors, grants
-src/modules/oauth/code/       pending authorization requests and one-time codes
-src/modules/oauth/token/      minting, storing and rotating tokens, the signing keys — knows no protocol
-src/modules/oauth/grant/      one service per grant_type, plus the registry that names the set
+src/modules/oauth/submodules/code/       pending authorization requests and one-time codes
+src/modules/oauth/submodules/token/      minting, storing and rotating tokens, the signing keys — knows no protocol
+src/modules/oauth/submodules/grant/      one service per grant_type, plus the registry that names the set
 src/modules/oauth/scope/      the scope policy, shared by /authorize and the grants
 src/modules/client/         registered clients, with their redirect URIs
 src/modules/user/           the accounts: signup, credential check, bcrypt — called by nothing above

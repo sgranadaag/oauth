@@ -1,15 +1,22 @@
 # Build: every dependency, then `next build` with the standalone output.
+#
+# `NEXT_PUBLIC_*` variables are inlined into the bundle **here**, not read at
+# run time: this app is a pure frontend and the browser has no environment to
+# read. Passing them as `environment:` in compose would silently do nothing,
+# so they arrive as build args.
 FROM node:22-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+
+ARG NEXT_PUBLIC_AUTH_SERVER_URL
+ENV NEXT_PUBLIC_AUTH_SERVER_URL=$NEXT_PUBLIC_AUTH_SERVER_URL
+
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-# Run: Next's standalone server and only the modules it traced. Server-side
-# variables (both API keys among them) are read at run time from the
-# environment, never at build time — no .env is baked into the image.
+# Run: Next's standalone server and only the modules it traced.
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3003

@@ -95,12 +95,11 @@ reverse. The boundaries that carry most of the design:
 
 ## How it talks to the others
 
-- **From the browser**: `GET /oauth/authorize`, then a redirect to the
-  sign-in page of the identity provider the request named, with
-  `?interaction=…`. The `idp` parameter picks one of `IDENTITY_PROVIDERS`
-  (`local` by default) and each entry reads its URL from the environment,
-  so adding a provider is a constant plus a variable — not a change in
-  the flow, and not a field on the client.
+- **From the browser**: `GET /oauth/authorize`, guarded by
+  `AuthorizeClientGuard` (which proves the client and its `redirect_uri`,
+  or answers 400), then a redirect to the login app with
+  `?interaction=…`. There is one login app, at `LOGIN_APP_URL` — not a
+  client field, and not a choice the request makes.
 - **From auth-front's server side**: `POST /users/verify` first, then
   `GET /oauth/interactions/:id` and `POST /oauth/interactions/:id/accept`,
   all three with `ADMIN_API_KEY` in `x-admin-key`. The login app names
@@ -122,7 +121,7 @@ reverse. The boundaries that carry most of the design:
 **Deliberately light: no tests, no linter, no formatter.** The
 `Dockerfile` exists only for the root `docker-compose.yml`; it builds with
 `@rspack/core` (declared, since the Nest CLI needs it for its `rspack`
-builder) and reads the signing keys from a mounted `src/core/secrets/`.
+builder) and reads the signing keys from a mounted `secrets/`.
 Don't add any of them back unless the user asks. The user runs the app
 themselves; don't run `npm run build` or `npm run start:dev` unless
 asked — report what changed and what is worth verifying.

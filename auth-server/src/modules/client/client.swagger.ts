@@ -41,6 +41,16 @@ export const CLIENT_PROPERTY_SWAGGER = {
     example: ['http://localhost:3001/api/auth/callback'],
     type: [String],
   },
+  IS_PUBLIC: {
+    description:
+      'True for a client that cannot keep a secret — an SPA or a mobile app. ' +
+      'It is issued no `client_secret` at all, identifies itself at ' +
+      '`/oauth/token` with `client_id` in the body, and is protected by PKCE ' +
+      'alone (RFC 6749 §2.1).',
+    example: false,
+    required: false,
+  },
+
   GRANT_TYPES: {
     description:
       'Which grants this client may use (RFC 7591 `grant_types`). Asking for ' +

@@ -10,64 +10,106 @@ import {
   Query,
   Redirect,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { SwaggerDocs } from '@common/decorators/swaggerDocs.decorator';
 import { BasicTokenGuard } from '@common/guards/basicToken.guard';
-import { GrantTypeGuard } from '@common/guards/grantType.guard';
-import { AdminGuard } from '@common/guards/admin.guard';
-import type { BasicTokenRequest } from '@common/interfaces/authenticatedRequest.interface';
-import type { JwkSet } from '@modules/oauth/token/interfaces/jwks.interface';
-import { OauthService } from '@modules/oauth/oauth.service';
+import type {
+  AuthorizeRequest,
+  BasicTokenRequest,
+} from '@common/interfaces/authenticatedRequest.interface';
 import { OAUTH_SWAGGER } from '@modules/oauth/oauth.swagger';
-import { InteractionAcceptDto } from '@modules/oauth/dto/interactionAccept.dto';
+import { MILLISECONDS_PER_SECOND } from '@modules/oauth/oauth.constants';
+import { InteractionLoginDto } from '@modules/oauth/dto/interactionLogin.dto';
+import { SignInService } from '@modules/oauth/flows/signIn/signIn.service';
+import { TokenExchangeService } from '@modules/oauth/flows/tokenExchange/tokenExchange.service';
+import { TokenService } from '@modules/oauth/token/token.service';
+import { getPublicJwks } from '@modules/oauth/token/utils/keys.util';
+import {
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+} from '@modules/oauth/session/session.constants';
 import type {
   AuthorizeQuery,
-  InteractionAcceptResult,
   InteractionDetails,
-} from '@modules/oauth/interfaces/authorizeEndpoint.interface';
+} from '@modules/oauth/flows/signIn/interfaces/signIn.interface';
 import type {
   TokenRequestParams,
   TokenResponse,
-} from '@modules/oauth/interfaces/tokenEndpoint.interface';
+} from '@modules/oauth/flows/tokenExchange/interfaces/tokenExchange.interface';
 import type { RevokeRequestParams } from '@modules/oauth/interfaces/revokeEndpoint.interface';
+import type { JwkSet } from '@modules/oauth/token/interfaces/jwks.interface';
 
 @ApiTags(OAUTH_SWAGGER.API_TAG)
 @Controller('oauth')
 export class OauthController {
-  constructor(private readonly oauthService: OauthService) {}
+  constructor(
+    private readonly signInService: SignInService,
+    private readonly tokenExchangeService: TokenExchangeService,
+    private readonly tokenService: TokenService,
+  ) {}
 
   @SwaggerDocs(OAUTH_SWAGGER.AUTHORIZE)
   @Get('authorize')
   @Redirect()
-  async authorize(@Query() query: AuthorizeQuery): Promise<{ url: string }> {
-    const providerUrl = await this.oauthService.authorize(query)
-    return { url: providerUrl };
+  async authorize(
+    @Req() request: AuthorizeRequest,
+    @Query() query: AuthorizeQuery,
+  ): Promise<{ url: string }> {
+    const url = await this.signInService.start(
+      query,
+      request.cookies?.[SESSION_COOKIE],
+    );
+
+    return { url };
   }
 
   @SwaggerDocs(OAUTH_SWAGGER.INTERACTION)
-  @UseGuards(AdminGuard)
   @Get('interactions/:interactionId')
-  interaction(
+  describeInteraction(
     @Param('interactionId') interactionId: string,
   ): Promise<InteractionDetails> {
-    return this.oauthService.interaction(interactionId);
+    return this.signInService.describe(interactionId);
   }
 
-  @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_ACCEPT)
-  @UseGuards(AdminGuard)
-  @Post('interactions/:interactionId/accept')
+  @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_LOGIN)
+  @Post('interactions/:interactionId/login')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
-  acceptInteraction(
+  async loginInteraction(
     @Param('interactionId') interactionId: string,
-    @Body() dto: InteractionAcceptDto,
-  ): Promise<InteractionAcceptResult> {
-    return this.oauthService.acceptInteraction(interactionId, {
-      id: dto.subject,
-      email: dto.email,
+    @Body() dto: InteractionLoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ redirectTo: string }> {
+    const { redirectTo, sessionId } = await this.signInService.complete(
+      interactionId,
+      dto,
+    );
+
+    response.cookie(SESSION_COOKIE, sessionId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: SESSION_TTL_SECONDS * MILLISECONDS_PER_SECOND,
     });
+
+    return { redirectTo };
+  }
+
+  @SwaggerDocs(OAUTH_SWAGGER.TOKEN)
+  @UseGuards(BasicTokenGuard)
+  @Post('token')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  issueTokens(
+    @Req() request: BasicTokenRequest,
+    @Body() params: TokenRequestParams,
+  ): Promise<TokenResponse> {
+    return this.tokenExchangeService.exchange(request.client, params);
   }
 
   @SwaggerDocs(OAUTH_SWAGGER.REVOKE)
@@ -75,29 +117,19 @@ export class OauthController {
   @Post('revoke')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
-  async revoke(
+  async revokeSession(
     @Req() request: BasicTokenRequest,
     @Body() params: RevokeRequestParams,
   ): Promise<void> {
-    await this.oauthService.revoke(request.client, params);
+    if (!params.token) return;
+
+    await this.tokenService.revokeSession(params.token, request.client.id);
   }
 
   @SwaggerDocs(OAUTH_SWAGGER.JWKS)
   @Get('jwks')
   @Header('Cache-Control', 'public, max-age=3600')
   jwks(): JwkSet {
-    return this.oauthService.jwks();
-  }
-
-  @SwaggerDocs(OAUTH_SWAGGER.TOKEN)
-  @UseGuards(BasicTokenGuard, GrantTypeGuard)
-  @Post('token')
-  @HttpCode(HttpStatus.OK)
-  @Header('Cache-Control', 'no-store')
-  async token(
-    @Req() request: BasicTokenRequest,
-    @Body() params: TokenRequestParams,
-  ): Promise<TokenResponse> {
-    return this.oauthService.token(request.client, params);
+    return getPublicJwks();
   }
 }

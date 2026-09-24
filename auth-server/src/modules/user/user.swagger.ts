@@ -40,6 +40,11 @@ export const USER_PROPERTY_SWAGGER = {
   ID: {
     example: '7b1e4c92-0d3a-4f8b-a6c1-2e5f9d0a3b74',
   },
+  CLIENT_ID: {
+    description: 'The client this account belongs to.',
+    example: '7b1e4c92-0d3a-4f8b-a6c1-2e5f9d0a3b74',
+  },
+
   EMAIL: {
     description: 'Unique across the whole provider.',
     example: 'alice@example.com',

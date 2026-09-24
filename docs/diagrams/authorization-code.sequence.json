@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Authorization Code Grant",
+    "locale": "en",
+    "output": "docs/diagrams/authorization-code.html",
+    "viewBox": [
+      1060,
+      800
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    {
+      "id": "clientFront",
+      "type": "frontend",
+      "label": "client-front :3001",
+      "sublabel": "public client"
+    },
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "Browser",
+      "sublabel": "the person"
+    },
+    {
+      "id": "authServer",
+      "type": "security",
+      "label": "auth-server :3000",
+      "sublabel": "provider"
+    },
+    {
+      "id": "authFront",
+      "type": "frontend",
+      "label": "auth-front :3003",
+      "sublabel": "login page"
+    }
+  ],
+  "segments": [
+    {
+      "from": 152,
+      "to": 210,
+      "label": "1 · Leave for the provider"
+    },
+    {
+      "from": 212,
+      "to": 270,
+      "label": "2 · Authorization request"
+    },
+    {
+      "from": 272,
+      "to": 510,
+      "label": "3 · Sign in at the provider"
+    },
+    {
+      "from": 512,
+      "to": 690,
+      "label": "4 · Code for tokens"
+    }
+  ],
+  "messages": [
+    {
+      "id": "open-app",
+      "from": "browser",
+      "to": "clientFront",
+      "y": 165,
+      "label": "open the app · nothing stored",
+      "variant": "default"
+    },
+    {
+      "id": "leave",
+      "from": "clientFront",
+      "to": "browser",
+      "y": 195,
+      "label": "navigate to /oauth/authorize",
+      "variant": "return",
+      "note": "a fresh state is generated and kept in sessionStorage"
+    },
+    {
+      "id": "authorize",
+      "from": "browser",
+      "to": "authServer",
+      "y": 225,
+      "label": "GET /oauth/authorize ?response_type=code, client_id, redirect_uri, scope, state",
+      "variant": "emphasis",
+      "note": "client_id and redirect_uri are checked first — 400 here, never a redirect"
+    },
+    {
+      "id": "to-login",
+      "from": "authServer",
+      "to": "browser",
+      "y": 255,
+      "label": "302 → auth-front /login?interaction=<id>",
+      "variant": "return",
+      "note": "no session cookie for this client yet"
+    },
+    {
+      "id": "open-login",
+      "from": "browser",
+      "to": "authFront",
+      "y": 285,
+      "label": "GET /login?interaction=<id>",
+      "variant": "default"
+    },
+    {
+      "id": "describe",
+      "from": "authFront",
+      "to": "authServer",
+      "y": 315,
+      "label": "GET /oauth/interactions/:id",
+      "variant": "default",
+      "note": "public — the login page holds no credential of any kind"
+    },
+    {
+      "id": "described",
+      "from": "authServer",
+      "to": "authFront",
+      "y": 345,
+      "label": "200 { clientName, scope }",
+      "variant": "return"
+    },
+    {
+      "id": "form",
+      "from": "authFront",
+      "to": "browser",
+      "y": 375,
+      "label": "sign-in form",
+      "variant": "return"
+    },
+    {
+      "id": "credentials",
+      "from": "browser",
+      "to": "authFront",
+      "y": 405,
+      "label": "email + password",
+      "variant": "emphasis"
+    },
+    {
+      "id": "login",
+      "from": "authFront",
+      "to": "authServer",
+      "y": 435,
+      "label": "POST /oauth/interactions/:id/login · credentials: include",
+      "variant": "security",
+      "note": "the same 401 for an unknown email and for a wrong password"
+    },
+    {
+      "id": "logged-in",
+      "from": "authServer",
+      "to": "authFront",
+      "y": 465,
+      "label": "200 { redirectTo } · Set-Cookie oauth_session",
+      "variant": "return",
+      "note": "httpOnly, SameSite=Lax, 30 days — bound to this one client"
+    },
+    {
+      "id": "back-to-client",
+      "from": "authFront",
+      "to": "browser",
+      "y": 495,
+      "label": "navigate to client-front /callback?code&state",
+      "variant": "return"
+    },
+    {
+      "id": "callback",
+      "from": "browser",
+      "to": "clientFront",
+      "y": 525,
+      "label": "GET /callback?code&state",
+      "variant": "emphasis",
+      "note": "state is compared with the stored one and discarded in the same step"
+    },
+    {
+      "id": "token",
+      "from": "clientFront",
+      "to": "authServer",
+      "y": 555,
+      "label": "POST /oauth/token · grant_type=authorization_code, code, redirect_uri, client_id",
+      "variant": "security",
+      "note": "no client_secret — a public client has none to send"
+    },
+    {
+      "id": "tokens",
+      "from": "authServer",
+      "to": "clientFront",
+      "y": 585,
+      "label": "200 { access_token, refresh_token, expires_in, scope }",
+      "variant": "return",
+      "note": "the code is spent before any of its checks run"
+    },
+    {
+      "id": "jwks",
+      "from": "clientFront",
+      "to": "authServer",
+      "y": 615,
+      "label": "GET /oauth/jwks",
+      "variant": "dashed",
+      "note": "indicated, not used: this client verifies with a bundled public.pem copy"
+    },
+    {
+      "id": "keys",
+      "from": "authServer",
+      "to": "clientFront",
+      "y": 645,
+      "label": "200 { keys: [{ kid, n, e, alg: RS256 }] }",
+      "variant": "return"
+    },
+    {
+      "id": "signed-in",
+      "from": "clientFront",
+      "to": "browser",
+      "y": 675,
+      "label": "session stored · signed in",
+      "variant": "return",
+      "note": "RS256 verified with Web Crypto, then iss and client_id read from the claims"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "clientFront",
+      "from": 160,
+      "to": 201,
+      "type": "frontend"
+    },
+    {
+      "participant": "authServer",
+      "from": 220,
+      "to": 261,
+      "type": "security"
+    },
+    {
+      "participant": "authFront",
+      "from": 280,
+      "to": 381,
+      "type": "frontend"
+    },
+    {
+      "participant": "authServer",
+      "from": 310,
+      "to": 351,
+      "type": "security"
+    },
+    {
+      "participant": "authFront",
+      "from": 400,
+      "to": 501,
+      "type": "frontend"
+    },
+    {
+      "participant": "authServer",
+      "from": 430,
+      "to": 471,
+      "type": "security"
+    },
+    {
+      "participant": "clientFront",
+      "from": 520,
+      "to": 681,
+      "type": "frontend"
+    },
+    {
+      "participant": "authServer",
+      "from": 550,
+      "to": 591,
+      "type": "security"
+    },
+    {
+      "participant": "authServer",
+      "from": 610,
+      "to": 651,
+      "type": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Through the browser",
+      "items": [
+        "state is the whole of this client's front-channel protection — no PKCE",
+        "The code travels in the address bar, so it is single-use and short-lived",
+        "auth-front only ever learns an interaction id, never where the code goes"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "What the provider owns",
+      "items": [
+        "Accounts belong to one client: the same email under two clients is two people",
+        "The session cookie shortcuts that one client only — this is not SSO",
+        "The password reaches the interaction endpoint and nothing else"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Single use",
+      "items": [
+        "Issuing the code claims the authorization request and deletes it",
+        "The code is consumed first, then validated — a replay finds nothing",
+        "A second callback fails on state, which was taken and cleared at once"
+      ]
+    }
+  ]
+}

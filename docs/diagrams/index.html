@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-preset="classic">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OAuth 2.0 Flows</title>
+  <script>
+    // Resolve the theme before first paint so light-preference users don't
+    // see a dark flash. Same localStorage key the diagrams use, so a choice
+    // made in one carries into the others.
+    (function () {
+      try {
+        var theme = null;
+        try { theme = localStorage.getItem('archify-theme'); } catch (_) {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (_) {}
+    })();
+  </script>
+  <style>
+    :root,
+    html[data-theme="dark"] {
+      --bg: #020617;
+      --grid: #1e293b;
+      --text: #ffffff;
+      --text-muted: #94a3b8;
+      --text-dim: #475569;
+      --panel: rgba(15, 23, 42, 0.5);
+      --panel-border: #1e293b;
+      --panel-hover: rgba(15, 23, 42, 0.85);
+      --toolbar-bg: rgba(15, 23, 42, 0.8);
+      --toolbar-border: #334155;
+      --toolbar-text: #e2e8f0;
+      --frontend-stroke: #22d3ee;
+      --backend-stroke: #34d399;
+      --database-stroke: #a78bfa;
+      --security-stroke: #fb7185;
+    }
+
+    html[data-theme="light"] {
+      --bg: #f8fafc;
+      --grid: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --panel: #ffffff;
+      --panel-border: #e2e8f0;
+      --panel-hover: #ffffff;
+      --toolbar-bg: rgba(255, 255, 255, 0.9);
+      --toolbar-border: #cbd5e1;
+      --toolbar-text: #0f172a;
+      --frontend-stroke: #0891b2;
+      --backend-stroke: #059669;
+      --database-stroke: #7c3aed;
+      --security-stroke: #e11d48;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        'DejaVu Sans Mono', 'Liberation Mono', monospace;
+      background: var(--bg);
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 32px 32px;
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    main {
+      max-width: 1060px;
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 1.5rem 0 2rem;
+      border-bottom: 1px solid var(--panel-border);
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin: 0 0 0.6rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1.7;
+      margin: 0;
+      max-width: 68ch;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-top: 2px solid var(--accent);
+      border-radius: 6px;
+      padding: 1.25rem;
+      text-decoration: none;
+      color: inherit;
+      transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    }
+
+    .card:hover,
+    .card:focus-visible {
+      background: var(--panel-hover);
+      border-color: var(--accent);
+      border-top-color: var(--accent);
+      transform: translateY(-2px);
+      outline: none;
+    }
+
+    .card--code { --accent: var(--frontend-stroke); }
+    .card--credentials { --accent: var(--backend-stroke); }
+    .card--refresh { --accent: var(--database-stroke); }
+
+    .card__grant {
+      color: var(--accent);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin: 0 0 0.5rem;
+    }
+
+    .card__title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.6rem;
+    }
+
+    .card__description {
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      line-height: 1.65;
+      margin: 0 0 1rem;
+    }
+
+    .card__actors {
+      border-top: 1px solid var(--panel-border);
+      color: var(--text-dim);
+      font-size: 0.68rem;
+      line-height: 1.6;
+      padding-top: 0.75rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--panel-border);
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      line-height: 1.8;
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+    }
+
+    footer strong {
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .theme-toggle {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: var(--toolbar-bg);
+      border: 1px solid var(--toolbar-border);
+      border-radius: 6px;
+      color: var(--toolbar-text);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.72rem;
+      padding: 0.45rem 0.8rem;
+      backdrop-filter: blur(8px);
+    }
+
+    .theme-toggle:hover { border-color: var(--frontend-stroke); }
+
+    @media (max-width: 640px) {
+      body { padding: 1rem; }
+      h1 { font-size: 1.25rem; line-height: 1.25; }
+    }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle" type="button" id="themeToggle">Theme</button>
+
+  <main>
+    <header>
+      <h1>OAuth 2.0 &mdash; RFC 6749</h1>
+      <p class="subtitle">
+        The three grants this authorization server implements, each drawn on its own.
+        Plain OAuth 2.0: no PKCE, no OpenID Connect, and accounts scoped to one client.
+      </p>
+    </header>
+
+    <nav class="grid">
+      <a class="card card--code" href="authorization-code.html">
+        <p class="card__grant">authorization_code</p>
+        <p class="card__title">Authorization Code Grant</p>
+        <p class="card__description">
+          A browser app sends the person to the provider, and gets back a single-use
+          code it trades for tokens. <code>state</code> is the whole of its
+          front-channel protection.
+        </p>
+        <p class="card__actors">Browser &middot; client-front &middot; auth-front &middot; auth-server</p>
+      </a>
+
+      <a class="card card--credentials" href="client-credentials.html">
+        <p class="card__grant">client_credentials</p>
+        <p class="card__title">Client Credentials Grant</p>
+        <p class="card__description">
+          A backend acts as itself, with no person involved. One call with its secret,
+          one access token, and deliberately no refresh token.
+        </p>
+        <p class="card__actors">ACME Backend &middot; auth-server &middot; Resource API</p>
+      </a>
+
+      <a class="card card--refresh" href="refresh-token.html">
+        <p class="card__grant">refresh_token</p>
+        <p class="card__title">Refresh Token Rotation</p>
+        <p class="card__description">
+          Every renewal spends the token it was given and returns a new one. Presenting
+          a spent token is treated as theft and ends the whole session.
+        </p>
+        <p class="card__actors">client-front &middot; auth-server &middot; tokens (MongoDB)</p>
+      </a>
+    </nav>
+
+    <footer>
+      <strong>Deliberately absent.</strong> PKCE (RFC 7636) and OpenID Connect were both
+      removed: this is an illustrative implementation, and each diagram shows what plain
+      RFC 6749 actually requires. Accounts belong to one client, so the provider session
+      shortcuts that client only &mdash; it is not SSO.
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      var toggle = document.getElementById('themeToggle');
+      if (!toggle) return;
+
+      toggle.addEventListener('click', function () {
+        var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('archify-theme', next); } catch (_) {}
+      });
+    })();
+  </script>
+</body>
+</html>

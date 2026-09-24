@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Refresh Token Rotation",
+    "locale": "en",
+    "output": "docs/diagrams/refresh-token.html",
+    "viewBox": [
+      1060,
+      620
+    ],
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    {
+      "id": "clientFront",
+      "type": "frontend",
+      "label": "client-front :3001",
+      "sublabel": "public client"
+    },
+    {
+      "id": "authServer",
+      "type": "security",
+      "label": "auth-server :3000",
+      "sublabel": "provider"
+    },
+    {
+      "id": "tokens",
+      "type": "database",
+      "label": "tokens",
+      "sublabel": "MongoDB"
+    }
+  ],
+  "segments": [
+    {
+      "from": 162,
+      "to": 366,
+      "label": "1 · Rotation"
+    },
+    {
+      "from": 374,
+      "to": 506,
+      "label": "2 · The same token presented twice"
+    }
+  ],
+  "messages": [
+    {
+      "id": "renew",
+      "from": "clientFront",
+      "to": "authServer",
+      "y": 180,
+      "label": "POST /oauth/token · grant_type=refresh_token, refresh_token, client_id",
+      "variant": "emphasis",
+      "note": "no secret to send — client_id is read from the body for a public client"
+    },
+    {
+      "id": "lookup",
+      "from": "authServer",
+      "to": "tokens",
+      "y": 222,
+      "label": "find the presented token",
+      "variant": "security",
+      "note": "type, owning client, consumedAt and expiresAt all have to agree"
+    },
+    {
+      "id": "row",
+      "from": "tokens",
+      "to": "authServer",
+      "y": 264,
+      "label": "the stored row",
+      "variant": "return"
+    },
+    {
+      "id": "consume",
+      "from": "authServer",
+      "to": "tokens",
+      "y": 306,
+      "label": "set consumedAt where it is still null",
+      "variant": "emphasis",
+      "note": "one conditional update — two simultaneous renewals cannot both win"
+    },
+    {
+      "id": "rotated",
+      "from": "authServer",
+      "to": "clientFront",
+      "y": 348,
+      "label": "200 { access_token, refresh_token, scope }",
+      "variant": "return",
+      "note": "a new refresh token every time; the client must store this one"
+    },
+    {
+      "id": "replay",
+      "from": "clientFront",
+      "to": "authServer",
+      "y": 400,
+      "label": "POST /oauth/token with the token that was already spent",
+      "variant": "dashed",
+      "note": "a copy, presented by whoever took it"
+    },
+    {
+      "id": "revoke",
+      "from": "authServer",
+      "to": "tokens",
+      "y": 442,
+      "label": "delete every token of that sessionId",
+      "variant": "security",
+      "note": "consumedAt is set, so a second presentation means the token was copied"
+    },
+    {
+      "id": "refused",
+      "from": "authServer",
+      "to": "clientFront",
+      "y": 484,
+      "label": "400 { error: invalid_grant }",
+      "variant": "return",
+      "note": "identical to an unknown or expired token — the answer tells them apart"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "authServer",
+      "from": 175,
+      "to": 354,
+      "type": "security"
+    },
+    {
+      "participant": "tokens",
+      "from": 217,
+      "to": 270,
+      "type": "database"
+    },
+    {
+      "participant": "tokens",
+      "from": 301,
+      "to": 330,
+      "type": "database"
+    },
+    {
+      "participant": "authServer",
+      "from": 395,
+      "to": 490,
+      "type": "security"
+    },
+    {
+      "participant": "tokens",
+      "from": 437,
+      "to": 466,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Rotation",
+      "items": [
+        "Every renewal spends the presented token and returns a different one",
+        "The client stores the rotated value or its next renewal fails",
+        "Scope can only narrow what this token carried, never the client's full set"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Replay detection",
+      "items": [
+        "A spent token presented again means a copy of it exists somewhere",
+        "The whole session dies, not only the token that was replayed",
+        "Both the thief and the honest client are logged out — that is the point"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What a refresh does not touch",
+      "items": [
+        "Access tokens already issued are JWTs, verified offline, valid until exp",
+        "Revocation ends the session; it cannot reach a token already in the wild",
+        "Keeping the access token short is what bounds that window"
+      ]
+    }
+  ]
+}

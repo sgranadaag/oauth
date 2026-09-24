@@ -29,6 +29,9 @@ export class TokenEntity {
   @Column()
   sessionId: string;
 
+  @Column({ nullable: true })
+  codeId: string | null;
+
   @Column()
   sessionExpiresAt: Date;
 

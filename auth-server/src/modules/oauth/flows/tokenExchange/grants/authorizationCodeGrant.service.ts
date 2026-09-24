@@ -36,6 +36,7 @@ export class AuthorizationCodeGrantService implements GrantHandler {
       clientId: client.id,
       userId: redeemedCode.userId,
       scope: redeemedCode.scope,
+      codeId: redeemedCode.id,
       accessTokenTtlSeconds: client.accessTokenTtlSeconds ?? undefined,
     });
   }
@@ -47,12 +48,20 @@ export class AuthorizationCodeGrantService implements GrantHandler {
   ): Promise<CodeValueEntity> {
     const redeemedCode = await this.authorizationService.redeemCode(code);
 
-    const isValid =
-      !!redeemedCode &&
-      redeemedCode.clientId === client.id &&
-      redeemedCode.redirectUri === redirectUri;
+    if (!redeemedCode) {
+      const replayed = await this.authorizationService.findSpentCode(code);
 
-    if (!isValid) {
+      if (replayed) {
+        await this.tokenService.revokeByCode(replayed.id, client.id);
+      }
+
+      throw new OauthException(OAUTH_ERRORS.INVALID_GRANT, 'invalid grant');
+    }
+
+    if (
+      redeemedCode.clientId !== client.id ||
+      redeemedCode.redirectUri !== redirectUri
+    ) {
       throw new OauthException(OAUTH_ERRORS.INVALID_GRANT, 'invalid grant');
     }
 

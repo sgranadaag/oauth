@@ -70,6 +70,12 @@ export class AuthorizationService {
     return code && !isExpired(code.expiresAt) ? code : null;
   }
 
+  async findSpentCode(value: string): Promise<CodeValueEntity | null> {
+    const code = await this.repository.findCode(value);
+
+    return code?.consumedAt ? code : null;
+  }
+
   async removeAll(): Promise<ClearedAuthorizationRecords> {
     const requests = await this.repository.removeAllRequests();
     const codes = await this.repository.removeAllCodes();

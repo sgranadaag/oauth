@@ -58,6 +58,14 @@ export class SignInService {
       );
     }
 
+    if (!query.response_type) {
+      return buildUrl(redirectUri, {
+        error: OAUTH_ERRORS.INVALID_REQUEST,
+        error_description: 'response_type is required',
+        state,
+      });
+    }
+
     if (query.response_type !== CODE_RESPONSE_TYPE) {
       return buildUrl(redirectUri, {
         error: OAUTH_ERRORS.UNSUPPORTED_RESPONSE_TYPE,

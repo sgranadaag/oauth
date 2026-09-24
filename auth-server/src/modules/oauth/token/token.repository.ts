@@ -18,6 +18,10 @@ export class TokenRepository {
     return this.repository.findOneBy({ id });
   }
 
+  findByCodeId(codeId: string): Promise<TokenEntity | null> {
+    return this.repository.findOneBy({ codeId });
+  }
+
   async consume(id: string): Promise<boolean> {
     const result = await this.repository.updateOne(
       { id, consumedAt: null },

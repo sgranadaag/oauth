@@ -97,8 +97,7 @@ export const OAUTH_SWAGGER = {
         'It also ends the **browser** session when the request carries the ' +
         'session cookie, and clears it. Without that, signing out would drop ' +
         'the tokens while leaving the cookie that mints new ones, and the ' +
-        'next authorization request would sign the person straight back in. ' +
-        'A session belonging to another client is left alone.\n\n' +
+        'next authorization request would sign the person straight back in.\n\n' +
         'The answer is **200 whether or not the token existed** (§2.2), so ' +
         'the endpoint cannot be used to find out which tokens are real. A ' +
         'token belonging to another client is left alone, just as silently.\n\n' +
@@ -130,10 +129,16 @@ export const OAUTH_SWAGGER = {
     responses: {
       200: { description: 'Revoked, or there was nothing to revoke.' },
       400: {
-        description: 'RFC 6749 §5.2 error — `invalid_request` when `token` is missing.',
+        description:
+          '`invalid_request` when `token` is missing, or ' +
+          '`unsupported_token_type` for a `token_type_hint` that is not ' +
+          '`access_token` or `refresh_token` (RFC 7009 §2.1).',
         schema: RFC_ERROR_SCHEMA('invalid_request'),
       },
-      401: { description: 'Missing, malformed or invalid client credentials.' },
+      401: {
+        description: '`invalid_client`, with `WWW-Authenticate: Basic`.',
+        schema: RFC_ERROR_SCHEMA('invalid_client'),
+      },
     },
   },
 
@@ -163,7 +168,8 @@ export const OAUTH_SWAGGER = {
         'apply depends on `grant_type`:\n\n' +
         '- **authorization_code** — `code` and `redirect_uri` (the same one ' +
         'the flow started with) required. The code is single-use, and spent ' +
-        'before any check runs.\n' +
+        'before any check runs. Presenting it a second time is denied **and ' +
+        'revokes the session the first presentation produced** (§4.1.2).\n' +
         '- **client_credentials** — no extra fields. The token stands for the ' +
         'client itself, so there is no refresh token: ask again with the ' +
         'secret instead.\n' +
@@ -244,7 +250,12 @@ export const OAUTH_SWAGGER = {
         schema: RFC_ERROR_SCHEMA('invalid_grant'),
       },
       401: {
-        description: 'Missing, malformed or invalid client credentials.',
+        description:
+          '`invalid_client`. Sent when the client authenticated through the ' +
+          'Authorization header, together with `WWW-Authenticate: Basic`. A ' +
+          'client_id carried in the body instead answers 400 with the same ' +
+          'error code.',
+        schema: RFC_ERROR_SCHEMA('invalid_client'),
       },
     },
   },

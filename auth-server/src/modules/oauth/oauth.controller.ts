@@ -22,7 +22,12 @@ import type {
   BasicTokenRequest,
 } from '@common/interfaces/authenticatedRequest.interface';
 import { OAUTH_SWAGGER } from '@modules/oauth/oauth.swagger';
-import { MILLISECONDS_PER_SECOND } from '@modules/oauth/oauth.constants';
+import {
+  MILLISECONDS_PER_SECOND,
+  OAUTH_ERRORS,
+  TOKEN_TYPE_HINTS,
+} from '@modules/oauth/oauth.constants';
+import { OauthException } from '@modules/oauth/oauth.exception';
 import { InteractionLoginDto } from '@modules/oauth/dto/interactionLogin.dto';
 import { SignInService } from '@modules/oauth/flows/signIn/signIn.service';
 import { TokenExchangeService } from '@modules/oauth/flows/tokenExchange/tokenExchange.service';
@@ -79,6 +84,7 @@ export class OauthController {
   @Post('interactions/:interactionId/login')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   async loginInteraction(
     @Param('interactionId') interactionId: string,
     @Body() dto: InteractionLoginDto,
@@ -105,6 +111,7 @@ export class OauthController {
   @Post('token')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   issueTokens(
     @Req() request: BasicTokenRequest,
     @Body() params: TokenRequestParams,
@@ -117,11 +124,24 @@ export class OauthController {
   @Post('revoke')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   async revokeSession(
     @Req() request: BasicTokenRequest,
     @Res({ passthrough: true }) response: Response,
     @Body() params: RevokeRequestParams,
   ): Promise<void> {
+    if (!params.token) {
+      throw new OauthException(OAUTH_ERRORS.INVALID_REQUEST, 'token is required');
+    }
+
+    const hint = params.token_type_hint;
+    if (hint && !TOKEN_TYPE_HINTS.includes(hint)) {
+      throw new OauthException(
+        OAUTH_ERRORS.UNSUPPORTED_TOKEN_TYPE,
+        `${hint} is not a token type this server stores`,
+      );
+    }
+
     const sessionId = request.cookies?.[SESSION_COOKIE];
     await this.signInService.endSession(sessionId, request.client.id);
 
@@ -131,8 +151,6 @@ export class OauthController {
       secure: process.env.NODE_ENV === 'production',
       path: '/',
     });
-
-    if (!params.token) return;
 
     await this.tokenService.revokeSession(params.token, request.client.id);
   }

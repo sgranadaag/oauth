@@ -35,6 +35,7 @@ export class TokenService {
     sessionId,
     sessionExpiresAt,
     accessTokenTtlSeconds,
+    codeId,
   }: IssueTokenInput): Promise<IssuedTokens> {
     const accessTokenTtl = accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS;
 
@@ -63,6 +64,7 @@ export class TokenService {
         scope,
         sessionId,
         sessionExpiresAt,
+        codeId,
       });
     }
 
@@ -71,6 +73,13 @@ export class TokenService {
 
   async revokeSession(tokenId: string, clientId: string): Promise<void> {
     const token = await this.tokenRepository.find(tokenId);
+    if (!token || token.clientId !== clientId) return;
+
+    await this.tokenRepository.removeBySessionId(token.sessionId);
+  }
+
+  async revokeByCode(codeId: string, clientId: string): Promise<void> {
+    const token = await this.tokenRepository.findByCodeId(codeId);
     if (!token || token.clientId !== clientId) return;
 
     await this.tokenRepository.removeBySessionId(token.sessionId);
@@ -86,12 +95,14 @@ export class TokenService {
     scope,
     sessionId,
     sessionExpiresAt,
+    codeId,
   }: {
     clientId: string;
     userId: string;
     scope: string;
     sessionId?: string;
     sessionExpiresAt?: Date;
+    codeId?: string;
   }): Promise<string> {
     const sessionEnd = sessionExpiresAt ?? secondsFromNow(SESSION_TTL_SECONDS);
 
@@ -102,6 +113,7 @@ export class TokenService {
     token.userId = userId;
     token.sessionId = sessionId ?? randomUUID();
     token.sessionExpiresAt = sessionEnd;
+    token.codeId = codeId ?? null;
     token.scope = scope;
 
     token.expiresAt = new Date(

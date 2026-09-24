@@ -8,6 +8,8 @@ export interface IssueTokenInput {
   sessionId?: string;
   sessionExpiresAt?: Date;
 
+  codeId?: string;
+
   accessTokenTtlSeconds?: number;
 }
 

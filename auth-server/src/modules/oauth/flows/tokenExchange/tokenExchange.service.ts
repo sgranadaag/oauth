@@ -27,19 +27,19 @@ export class TokenExchangeService {
       );
     }
 
-    const grantTypes = client.grantTypes ?? DEFAULT_GRANT_TYPES;
-    if (!grantTypes.includes(grantType)) {
-      throw new OauthException(
-        OAUTH_ERRORS.UNAUTHORIZED_CLIENT,
-        `this client is not registered for ${grantType}`,
-      );
-    }
-
     const registration = GRANT_TYPES.find((grant) => grant.type === grantType);
     if (!registration) {
       throw new OauthException(
         OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE,
         `grant type ${grantType} is not supported`,
+      );
+    }
+
+    const grantTypes = client.grantTypes ?? DEFAULT_GRANT_TYPES;
+    if (!grantTypes.includes(grantType)) {
+      throw new OauthException(
+        OAUTH_ERRORS.UNAUTHORIZED_CLIENT,
+        `this client is not registered for ${grantType}`,
       );
     }
 

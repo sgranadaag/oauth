@@ -17,5 +17,11 @@ export const OAUTH_ERRORS = {
   UNSUPPORTED_RESPONSE_TYPE: 'unsupported_response_type',
 
   LOGIN_REQUIRED: 'login_required',
+
+  UNSUPPORTED_TOKEN_TYPE: 'unsupported_token_type',
 } as const;
+
+export const TOKEN_TYPE_HINTS: string[] = ['access_token', 'refresh_token'];
+
+export const BASIC_CHALLENGE = 'Basic realm="oauth", charset="UTF-8"';
 export const MILLISECONDS_PER_SECOND = 1000;

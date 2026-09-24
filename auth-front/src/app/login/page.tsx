@@ -8,14 +8,6 @@ import { Notice } from "@components/notice.component";
 import { findInteraction } from "@services/interaction.service";
 import type { InteractionDetails } from "@shared/interaction.types";
 
-
-// GET /login?interaction=<id> — where /oauth/authorize sends the browser. The
-// URL carries nothing but the interaction id: who is asking, for which scopes
-// and where the code goes are looked up on the server, so editing the address
-// bar changes nothing.
-//
-// This app is a pure frontend: it holds no credential of any kind, so the
-// lookup is a plain public read from the browser.
 const LoginPage = (): ReactElement => {
   const [interactionId, setInteractionId] = useState<string | null>(null);
   const [details, setDetails] = useState<InteractionDetails | null>(null);

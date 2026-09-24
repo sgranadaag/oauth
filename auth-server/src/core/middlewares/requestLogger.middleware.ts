@@ -15,7 +15,6 @@ const SENSITIVE_QUERY_PARAMS = new Set([
   'code',
   'client_secret',
   'password',
-  'id_token_hint',
 ]);
 
 type LoggableRequest = Request & Partial<Pick<BasicTokenRequest, 'client'>>;

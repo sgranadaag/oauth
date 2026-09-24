@@ -7,18 +7,25 @@ import { join } from 'node:path';
 const MODULUS_LENGTH = 2048;
 
 function main(): void {
-  // PKCS#1 PEM ("BEGIN RSA PRIVATE KEY" / "BEGIN RSA PUBLIC KEY") is the only
-  // format written. It is what this app signs and verifies with
-  // (src/utils/jwt.util.ts) and what external tooling expects (openssl, jwt.io,
-  // other languages' crypto libraries).
+  // The two halves are written in different formats on purpose.
   //
-  // No .jwk.json files: oidc-provider's `jwks` config needs JWK objects, but
-  // oidcProvider.factory.ts derives those from this PEM at boot with
-  // crypto.createPrivateKey(...).export({ format: 'jwk' }), so the PEM stays the
-  // single source of truth for the key pair.
+  // Private: PKCS#1 ("BEGIN RSA PRIVATE KEY"), which jsonwebtoken signs with
+  // directly and openssl, jwt.io and other languages' crypto libraries all
+  // read.
+  //
+  // Public: SPKI ("BEGIN PUBLIC KEY"), because client-front verifies tokens
+  // in the browser and `crypto.subtle.importKey` accepts SPKI and nothing
+  // else — never PKCS#1. Node's createPublicKey() reads both, so the JWKS
+  // endpoint is indifferent; the browser is not. Writing SPKI here is what
+  // makes client-front/public/public.pem a plain copy of this file instead of
+  // a conversion step someone has to remember.
+  //
+  // No .jwk.json files: the JWK Set is derived from public.pem at request
+  // time (token/utils/keys.util.ts), so the PEM stays the single source of
+  // truth for the key pair.
   const { publicKey, privateKey } = generateKeyPairSync('rsa', {
     modulusLength: MODULUS_LENGTH,
-    publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
   });
 

@@ -4,10 +4,15 @@ import { useEffect, useState } from "react";
 import type { ReactElement } from "react";
 
 import { SessionCard } from "@components/session.component";
-import { SignIn } from "@components/signIn.component";
+import { SignInCard } from "@components/signIn.component";
 import { buildAuthorizeUrl, endSession, renewSession } from "@services/auth.service";
-import { readSession } from "@utils/session.util";
-import { SESSION_EXPIRED } from "@constants/session.constants";
+import {
+  hasTriedSilentSignIn,
+  markSilentSignInTried,
+  readSession,
+} from "@utils/session.util";
+import { NO_PROMPT } from "@constants/auth.constants";
+import { LOGIN_REQUIRED, SESSION_EXPIRED } from "@constants/session.constants";
 import type { Session } from "@shared/auth.types";
 
 const HomePage = (): ReactElement => {
@@ -15,10 +20,22 @@ const HomePage = (): ReactElement => {
   const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    setSession(readSession());
+    const stored = readSession();
+    if (stored) {
+      setSession(stored);
+      return;
+    }
 
     const failure = new URLSearchParams(window.location.search).get("error");
-    if (failure) setError(failure);
+    if (failure) {
+      setError(failure === LOGIN_REQUIRED ? undefined : failure);
+      return;
+    }
+
+    if (hasTriedSilentSignIn()) return;
+
+    markSilentSignInTried();
+    window.location.assign(buildAuthorizeUrl(NO_PROMPT));
   }, []);
 
   const signIn = (): void => {
@@ -43,7 +60,7 @@ const HomePage = (): ReactElement => {
   return session ? (
     <SessionCard session={session} error={error} onRenew={renew} onSignOut={signOut} />
   ) : (
-    <SignIn error={error} onSignIn={signIn} />
+    <SignInCard error={error} onSignIn={signIn} />
   );
 };
 

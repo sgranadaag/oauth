@@ -35,6 +35,24 @@ services:
     volumes:
       - ./auth-server/secrets:/app/secrets
 
+  # Runs the pending TypeORM migrations and exits. What has already run is
+  # recorded in a `migrations` collection, so this sits in front of the server
+  # on every `up` and does nothing once it is up to date.
+  #
+  # The ids the seed migration writes are fixed, which is what lets
+  # client-front bake one into its bundle below without a copy-paste step.
+  migrations:
+    build:
+      context: ./auth-server
+      target: build
+    command: npm run migration:run
+    env_file: ./auth-server/.env
+    environment:
+      MONGO_URI: mongodb://mongo:27017
+    depends_on:
+      mongo:
+        condition: service_healthy
+
   auth-server:
     build: ./auth-server
     env_file: ./auth-server/.env
@@ -55,6 +73,8 @@ services:
         condition: service_healthy
       signing-keys:
         condition: service_completed_successfully
+      migrations:
+        condition: service_completed_successfully
 
   # The login page. It holds no credential: it reads the pending interaction
   # and posts the typed password straight to the auth server.
@@ -68,16 +88,16 @@ services:
     depends_on:
       - auth-server
 
-  # A public client: no secret, so `client_id` is all it carries. Put the id
-  # `POST /clients` returned in NEXT_PUBLIC_OAUTH_CLIENT_ID and rebuild — it is
-  # baked into the bundle, not read at start.
+  # A public client: no secret, so `client_id` is all it carries. The id below
+  # is ACME Web, written by the seed migration — baked into the bundle at build time,
+  # not read at start, so changing it means rebuilding this image.
   client-front:
     build:
       context: ./client-front
       args:
         NEXT_PUBLIC_AUTH_SERVER_URL: http://localhost:3000
         NEXT_PUBLIC_OAUTH_ISSUER: http://localhost:3000
-        NEXT_PUBLIC_OAUTH_CLIENT_ID: ""
+        NEXT_PUBLIC_OAUTH_CLIENT_ID: 11111111-1111-4111-8111-111111111111
         NEXT_PUBLIC_OAUTH_REDIRECT_URI: http://localhost:3001/callback
         NEXT_PUBLIC_OAUTH_SCOPE: read write
     ports:

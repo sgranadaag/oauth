@@ -20,11 +20,17 @@ export const OAUTH_SWAGGER = {
         'RFC 6749 §4.1.1, reached through the browser, never called as an ' +
         'API. Query parameters: `response_type=code`, `client_id`, ' +
         '`redirect_uri` (must match one registered for the client exactly), ' +
-        '`scope` (include `openid` for an ID token), `state`, `nonce`, ' +
-        '`code_challenge` and `code_challenge_method=S256` — PKCE is ' +
-        'mandatory.\n\n' +
+        '`scope` and `state`. ' +
         'On success it redirects to the provider login page with an ' +
-        '`interaction` id. If the client or its redirect_uri cannot be ' +
+        '`interaction` id — unless the browser already carries a session ' +
+        'cookie for this same client, in which case it answers with a code ' +
+        'straight away.\n\n' +
+        '`prompt=none` says the caller cannot show a login page: with no ' +
+        'usable session it answers `login_required` at the redirect_uri ' +
+        'instead of redirecting to the provider. That is how a pure frontend ' +
+        'asks "am I still signed in?" without trapping a signed-out visitor ' +
+        'on a login form.\n\n' +
+        'If the client or its redirect_uri cannot be ' +
         'verified it answers 400 here and redirects nowhere; any later error ' +
         'is sent back to the redirect_uri as `error`, `error_description` and ' +
         '`state` — `unauthorized_client` when the client is not registered ' +
@@ -66,10 +72,11 @@ export const OAUTH_SWAGGER = {
         'checks them itself — there is no credential on the caller, which is ' +
         'why the login page can be a pure frontend.\n\n' +
         'On success it issues a single-use code, answers where to send the ' +
-        'browser (`{ redirectTo }`), and sets an **httpOnly SSO session ' +
-        'cookie** on this origin. The next authorization request that arrives ' +
-        'with that cookie skips this page entirely — that is what makes one ' +
-        'sign-in serve every client of this provider.\n\n' +
+        'browser (`{ redirectTo }`), and sets an **httpOnly session cookie** ' +
+        'on this origin. The next authorization request carrying that cookie ' +
+        'skips this page entirely.\n\n' +
+        'The session records the client it was opened for and shortcuts only ' +
+        'that one: accounts belong to a client, so this is **not** SSO.\n\n' +
         'A wrong email and a wrong password answer the same 401: telling ' +
         'them apart would list which emails are registered.',
     },
@@ -87,6 +94,11 @@ export const OAUTH_SWAGGER = {
       description:
         'Ends the session a refresh token belongs to: that token and every ' +
         'one it was rotated from. What "sign out" means for a client.\n\n' +
+        'It also ends the **browser** session when the request carries the ' +
+        'session cookie, and clears it. Without that, signing out would drop ' +
+        'the tokens while leaving the cookie that mints new ones, and the ' +
+        'next authorization request would sign the person straight back in. ' +
+        'A session belonging to another client is left alone.\n\n' +
         'The answer is **200 whether or not the token existed** (§2.2), so ' +
         'the endpoint cannot be used to find out which tokens are real. A ' +
         'token belonging to another client is left alone, just as silently.\n\n' +
@@ -129,10 +141,12 @@ export const OAUTH_SWAGGER = {
     operation: {
       summary: 'Public signing keys (JWK Set, RFC 7517)',
       description:
-        'The public half of the key every token is signed with. A client ' +
-        'verifies its ID token here, an API its access tokens: take the ' +
-        'key whose `kid` matches the token header, and accept only RS256. ' +
-        'No private member is ever included.',
+        'The public half of the key every access token is signed with. A ' +
+        'verifier takes the key whose `kid` matches the token header and ' +
+        'accepts only RS256. No private member is ever included.\n\n' +
+        'Published for completeness: `client-front` ships a copy of the same ' +
+        'key instead, which is simpler to read but does not survive a key ' +
+        'rotation.',
     },
     responses: {
       200: {
@@ -147,10 +161,9 @@ export const OAUTH_SWAGGER = {
       description:
         'RFC 6749 §3.2. One endpoint serves every grant; which body fields ' +
         'apply depends on `grant_type`:\n\n' +
-        '- **authorization_code** — `code`, `redirect_uri` (the same one the ' +
-        'flow started with) and `code_verifier` (PKCE) required. The code is ' +
-        'single-use. With `openid` in the granted scope, the response carries ' +
-        'an `id_token`.\n' +
+        '- **authorization_code** — `code` and `redirect_uri` (the same one ' +
+        'the flow started with) required. The code is single-use, and spent ' +
+        'before any check runs.\n' +
         '- **client_credentials** — no extra fields. The token stands for the ' +
         'client itself, so there is no refresh token: ask again with the ' +
         'secret instead.\n' +
@@ -186,13 +199,7 @@ export const OAUTH_SWAGGER = {
             description:
               'Required for `grant_type=authorization_code`: the same value ' +
               'sent to the authorization endpoint.',
-            example: 'http://localhost:3001/api/auth/callback',
-          },
-          code_verifier: {
-            type: 'string' as const,
-            description:
-              'Required for `grant_type=authorization_code`: the PKCE secret ' +
-              'behind the code_challenge.',
+            example: 'http://localhost:3001/callback',
           },
           refresh_token: {
             type: 'string' as const,
@@ -221,15 +228,9 @@ export const OAUTH_SWAGGER = {
               description:
                 'Opaque, never a JWT. Absent for `client_credentials`.',
             },
-            id_token: {
-              type: 'string' as const,
-              description:
-                'OpenID Connect ID token (signed JWT, `aud` = client_id). Only ' +
-                'from authorization_code, and only when `openid` was granted.',
-            },
             expires_in: { type: 'integer' as const, example: 3600 },
             token_type: { type: 'string' as const, example: 'Bearer' },
-            scope: { type: 'string' as const, example: 'openid read write' },
+            scope: { type: 'string' as const, example: 'read write' },
           },
         },
       },
@@ -238,7 +239,7 @@ export const OAUTH_SWAGGER = {
           'RFC 6749 §5.2 error — `unauthorized_client` (the client is not ' +
           'registered for this `grant_type`), `invalid_grant` (an unknown, used or ' +
           'expired code or refresh token; a redirect_uri or ' +
-          'code_verifier that does not match), `invalid_scope`, ' +
+          '`invalid_scope`, ' +
           '`invalid_request` or `unsupported_grant_type`.',
         schema: RFC_ERROR_SCHEMA('invalid_grant'),
       },

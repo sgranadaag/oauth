@@ -70,9 +70,15 @@ web_modules/
 .env.*
 !.env.example
 
-# generated JWT signing key pair — regenerate locally with `npm run generate-signing-keys`
-secrets/*.pem
-secrets/*.jwk.json
+# The JWT signing key pair, generated per machine by `npm run generate-signing-keys`
+# or by the `signing-keys` service on `docker compose up`. Never committed:
+# private.pem signs every access token this provider issues.
+#
+# This does not cover client-front/public/public.pem, and must not: that copy
+# is the public half, it is committed on purpose, and the browser bundle ships
+# it to verify tokens offline.
+secrets/
+*.jwk.json
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

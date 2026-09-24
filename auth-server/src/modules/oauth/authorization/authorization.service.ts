@@ -10,6 +10,7 @@ import { CodeValueEntity } from '@modules/oauth/authorization/entities/codeValue
 import { RequestEntity } from '@modules/oauth/authorization/entities/request.entity';
 import { AuthorizationRepository } from '@modules/oauth/authorization/authorization.repository';
 import type {
+  ClearedAuthorizationRecords,
   CodeSubject,
   CreateRequestInput,
 } from '@modules/oauth/authorization/interfaces/authorization.interface';
@@ -67,5 +68,12 @@ export class AuthorizationService {
     const code = await this.repository.findCode(value);
 
     return code && !isExpired(code.expiresAt) ? code : null;
+  }
+
+  async removeAll(): Promise<ClearedAuthorizationRecords> {
+    const requests = await this.repository.removeAllRequests();
+    const codes = await this.repository.removeAllCodes();
+
+    return { requests, codes };
   }
 }

@@ -13,7 +13,7 @@ const CallbackPage = (): ReactElement => {
     started.current = true;
 
     void (async () => {
-      const params = new URLSearchParams(window.location.search); //there is a next hook for this 
+      const params = new URLSearchParams(window.location.search);
       const failure = await completeSignIn(params);
 
       window.location.replace(failure ? `/?error=${failure}` : "/");

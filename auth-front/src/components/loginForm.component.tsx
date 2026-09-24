@@ -9,8 +9,6 @@ import {
 import { signIn } from "@services/interaction.service";
 import type { InteractionDetails } from "@shared/interaction.types";
 
-// What each reason from the service reads like to the person. Anything not
-// listed — an unreachable provider, a 5xx — falls back to the last line.
 const FAILURE_MESSAGES: Record<string, string> = {
   [INVALID_CREDENTIALS]: "Wrong email or password.",
   [INTERACTION_EXPIRED]:
@@ -35,15 +33,12 @@ export const LoginForm = ({ interactionId, clientName, scope }: LoginFormProps):
 
     const outcome = await signIn(interactionId, { email, password });
 
-    // Wrong password or dead link: say which, and let the person act on it.
     if (!outcome.ok) {
       setError(FAILURE_MESSAGES[outcome.reason] ?? UNAVAILABLE_MESSAGE);
       setIsSubmitting(false);
       return;
     }
 
-    // Back to the client, carrying the code. A full navigation, not a
-    // client-side route change: the destination is another application.
     window.location.assign(outcome.redirectTo);
   };
 

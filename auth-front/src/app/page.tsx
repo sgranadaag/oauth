@@ -2,8 +2,6 @@ import type { ReactElement } from "react";
 
 import { Notice } from "@components/notice.component";
 
-// Nobody lands here on purpose: a sign-in always starts in an application,
-// which sends the browser to /login with an interaction id.
 const HomePage = (): ReactElement => (
   <Notice
     title="Provider sign-in"

@@ -39,8 +39,10 @@ export class TokenService {
     const accessTokenTtl = accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS;
 
     const accessToken = signAccessToken(
-
-      { sub: userId ?? clientId, client_id: clientId, scope },
+      { sub: userId ?? clientId, 
+        client_id: clientId, 
+        scope 
+      },
       {
         issuer: this.issuer(),
         audience: DEFAULT_AUDIENCE,
@@ -72,6 +74,10 @@ export class TokenService {
     if (!token || token.clientId !== clientId) return;
 
     await this.tokenRepository.removeBySessionId(token.sessionId);
+  }
+
+  removeAll(): Promise<number> {
+    return this.tokenRepository.removeAll();
   }
 
   private async issueRefreshToken({

@@ -16,6 +16,7 @@ import {
 } from "@utils/crypto.util";
 import {
   clearSession,
+  markSilentSignInTried,
   storeSession,
   storeTransaction,
   takeTransaction,
@@ -28,40 +29,39 @@ import type {
 } from "@shared/auth.types";
 
 /**
- * Step 1: one unguessable value, kept here, and the URL to leave for.
+ * Starts a sign-in: stores a fresh `state` and returns the URL to leave for.
  *
- * Plain RFC 6749 §4.1.1 — no PKCE. `state` is the whole of this client's
- * protection: it proves the callback answers a request this browser started,
- * and nothing else stands between a stolen code and a token.
+ * @param prompt - `NO_PROMPT` to ask silently, without a login page.
+ * @returns The authorization URL to navigate to.
  */
-export const buildAuthorizeUrl = (): string => {
+export const buildAuthorizeUrl = (prompt?: string): string => {
   const state = randomValue();
   storeTransaction({ state });
 
-  const authorizeUrl = new URL("/oauth/authorize", AUTH_SERVER_URL);
-  authorizeUrl.search = new URLSearchParams({
+  const query = new URLSearchParams({
     response_type: "code",
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     scope: SCOPE,
     state,
-  }).toString();
+  });
+  if (prompt) query.set("prompt", prompt);
+
+  const authorizeUrl = new URL("/oauth/authorize", AUTH_SERVER_URL);
+  authorizeUrl.search = query.toString();
 
   return authorizeUrl.toString();
 };
 
 /**
- * Is this access token really the provider's?
+ * Verifies an access token against the provider's public key.
  *
- * The key is the copy bundled with this app. `GET /oauth/jwks` publishes the
- * same one by `kid` and is what a real client would read, because it survives
- * a rotation — this copy does not.
+ * @returns `true` only for an RS256 signature this app can check.
  */
 const isSignedByProvider = async (accessToken: string): Promise<boolean> => {
   const [encodedHeader, encodedPayload, encodedSignature] = accessToken.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) return false;
 
-  // RS256 only: honouring the token's own `alg` would honour `none`.
   const header = decodeJwtSegment<JwtHeader>(encodedHeader);
   if (header.alg !== "RS256") return false;
 
@@ -79,13 +79,12 @@ const isSignedByProvider = async (accessToken: string): Promise<boolean> => {
 };
 
 /**
- * Step 2: the return leg, from `?code` to a stored session.
+ * Completes a sign-in, from `?code` to a stored session.
  *
  * @param params - The query the provider sent the browser back with.
  * @returns `null` when the person is signed in, or the reason it failed.
  */
 export const completeSignIn = async (params: URLSearchParams): Promise<string | null> => {
-  // The provider may be reporting a refusal instead of a code.
   const providerError = params.get("error");
   if (providerError) return providerError;
 
@@ -117,7 +116,6 @@ export const completeSignIn = async (params: URLSearchParams): Promise<string | 
   const isTrustworthy = await isSignedByProvider(tokens.access_token);
   if (!isTrustworthy) return SIGN_IN_FAILED;
 
-  // Only a verified signature makes the claims worth reading.
   const claims = decodeJwtSegment<AccessTokenClaims>(tokens.access_token.split(".")[1]);
   if (claims.iss !== ISSUER || claims.client_id !== CLIENT_ID) return SIGN_IN_FAILED;
 
@@ -160,7 +158,6 @@ export const renewSession = async (session: Session): Promise<Session | null> =>
     ...session,
     scope: tokens.scope,
     accessToken: tokens.access_token,
-    // Store the rotated token: presenting a spent one ends the session.
     refreshToken: tokens.refresh_token ?? session.refreshToken,
     expiresAt: Date.now() + tokens.expires_in * MILLISECONDS_PER_SECOND,
   });
@@ -176,6 +173,7 @@ export const endSession = async (session: Session): Promise<void> => {
   try {
     await fetch(new URL("/oauth/revoke", AUTH_SERVER_URL), {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         token: session.refreshToken,
@@ -183,9 +181,8 @@ export const endSession = async (session: Session): Promise<void> => {
         client_id: CLIENT_ID,
       }),
     });
-  } catch {
-    // Dropped below regardless.
-  }
+  } catch {}
 
   clearSession();
+  markSilentSignInTried();
 };

@@ -30,4 +30,10 @@ export class TokenRepository {
   async removeBySessionId(sessionId: string): Promise<void> {
     await this.repository.deleteMany({ sessionId });
   }
+
+  async removeAll(): Promise<number> {
+    const result = await this.repository.deleteMany({});
+
+    return result.deletedCount;
+  }
 }

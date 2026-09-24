@@ -10,7 +10,11 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "generate-signing-keys": "ts-node -r tsconfig-paths/register scripts/generate-signing-keys.ts"
+    "generate-signing-keys": "ts-node -r tsconfig-paths/register scripts/generate-signing-keys.ts",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/core/database/dataSource.ts",
+    "migration:run": "npm run typeorm -- migration:run",
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "migration:show": "npm run typeorm -- migration:show"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

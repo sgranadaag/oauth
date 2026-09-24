@@ -12,7 +12,7 @@ export function setupSwagger(app: INestApplication): void {
     .setDescription(
       'RFC 6749 authorization server and OpenID Connect provider, ' +
         'implemented from scratch. The token endpoint serves the ' +
-        'Authorization Code (with PKCE), Client Credentials and Refresh Token ' +
+        'Authorization Code, Client Credentials and Refresh Token ' +
         'grants. `/users` is the identity side — the accounts and their ' +
         'password hashes — and nothing in `/oauth` calls it: the login app ' +
         'does, and then presents the result.',

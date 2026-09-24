@@ -22,5 +22,4 @@ export interface RefreshTokenGrantParams extends TokenRequestParams {
 export interface AuthorizationCodeGrantParams extends TokenRequestParams {
   code?: string;
   redirect_uri?: string;
-  code_verifier?: string;
 }

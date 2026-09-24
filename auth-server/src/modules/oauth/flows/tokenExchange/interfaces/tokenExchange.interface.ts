@@ -10,5 +10,4 @@ export interface TokenResponse {
   token_type: string;
   scope: string;
   refresh_token?: string;
-  id_token?: string;
 }

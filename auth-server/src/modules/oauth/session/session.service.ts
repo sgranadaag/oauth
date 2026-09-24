@@ -44,4 +44,8 @@ export class SessionService {
 
     await this.sessionRepository.remove(id);
   }
+
+  removeAll(): Promise<number> {
+    return this.sessionRepository.removeAll();
+  }
 }

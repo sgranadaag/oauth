@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
+import { ClientRepository } from '@modules/client/client.repository';
 import {
   DUMMY_PASSWORD_HASH,
   hashPassword,
@@ -10,13 +15,22 @@ import { UserRepository } from '@modules/user/user.repository';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly clientRepository: ClientRepository,
+  ) {}
 
   async signup(
     clientId: string,
     email: string,
     password: string,
   ): Promise<UserEntity> {
+    const client = await this.clientRepository.find(clientId);
+
+    if (!client) {
+      throw new BadRequestException(`Unknown client_id ${clientId}`);
+    }
+
     const existingUser = await this.userRepository.findByEmail(clientId, email);
 
     if (existingUser) {

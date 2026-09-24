@@ -20,6 +20,7 @@ export class ClientController {
       name: dto.name,
       allowedScopes: dto.allowedScopes,
       redirectUris: dto.redirectUris ?? [],
+      isPublic: dto.isPublic,
       grantTypes: dto.grantTypes,
       accessTokenTtlSeconds: dto.accessTokenTtlSeconds,
     });

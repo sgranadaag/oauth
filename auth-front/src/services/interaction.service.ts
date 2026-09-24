@@ -36,9 +36,9 @@ export const findInteraction = async (
 /**
  * Hands the credentials to the auth server, which owns the accounts.
  *
- * This app never judges a password — it only carries it. The server answers
- * each outcome the person must tell apart with its own status, and those
- * become the reasons below.
+ * This app never judges a password — it only carries it.
+ *
+ * @returns Where to send the browser next, or the reason it did not work.
  */
 export const signIn = async (
   interactionId: string,
@@ -48,6 +48,7 @@ export const signIn = async (
   try {
     response = await fetch(interactionUrl(interactionId, "/login"), {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(credentials),
     });

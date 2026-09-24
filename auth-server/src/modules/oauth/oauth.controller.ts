@@ -119,8 +119,19 @@ export class OauthController {
   @Header('Cache-Control', 'no-store')
   async revokeSession(
     @Req() request: BasicTokenRequest,
+    @Res({ passthrough: true }) response: Response,
     @Body() params: RevokeRequestParams,
   ): Promise<void> {
+    const sessionId = request.cookies?.[SESSION_COOKIE];
+    await this.signInService.endSession(sessionId, request.client.id);
+
+    response.clearCookie(SESSION_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    });
+
     if (!params.token) return;
 
     await this.tokenService.revokeSession(params.token, request.client.id);

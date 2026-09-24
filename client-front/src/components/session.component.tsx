@@ -5,12 +5,12 @@ import type { Session } from "@shared/auth.types";
 
 interface SessionCardProps {
   session: Session;
+  error?: string;
   onRenew: () => void;
   onSignOut: () => void;
-  error?: string;
 }
 
-const describeRemaining = (expiresAt: number): string => {
+const describeTimeLeft = (expiresAt: number): string => {
   const remainingSeconds = Math.round((expiresAt - Date.now()) / MILLISECONDS_PER_SECOND);
   if (remainingSeconds <= 0) {
     return "expired — renew it";
@@ -40,7 +40,7 @@ export const SessionCard = ({
       <dd className="session__item">
         Access token expires at{" "}
         {new Date(session.expiresAt).toLocaleTimeString("en-GB")} —{" "}
-        {describeRemaining(session.expiresAt)}
+        {describeTimeLeft(session.expiresAt)}
       </dd>
       <dd className="session__item">Access token</dd>
       <dd className="session__item session__item--token">{session.accessToken}</dd>
@@ -48,8 +48,6 @@ export const SessionCard = ({
       <dd className="session__item session__item--token">{session.refreshToken}</dd>
     </dl>
 
-    {/* Renewing never involves the person: a public client sends only the
-        refresh token. The provider rotates it, so the one above changes too. */}
     <button className="form__submit form__submit--wide" type="button" onClick={onRenew}>
       Renew token
     </button>

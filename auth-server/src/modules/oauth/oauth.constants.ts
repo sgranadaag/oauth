@@ -2,10 +2,6 @@ export const TOKEN_TYPE = 'Bearer';
 
 export const CODE_RESPONSE_TYPE = 'code';
 
-export const PKCE_METHOD = 'S256';
-
-export const OPENID_SCOPE = 'openid';
-
 export const NO_PROMPT = 'none';
 
 export const DEFAULT_LOGIN_APP_URL = 'http://localhost:3003/login';

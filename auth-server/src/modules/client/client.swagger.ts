@@ -28,9 +28,9 @@ export const CLIENT_PROPERTY_SWAGGER = {
   ALLOWED_SCOPES: {
     description:
       'Scope ceiling for this client. Every token it or its users obtain is ' +
-      "capped at this set. Include 'openid' for the client to receive an ID " +
-      'token from the authorization_code grant.',
-    example: ['openid', 'read', 'write'],
+      'capped at this set, and asking for anything outside it is ' +
+      '`invalid_scope`.',
+    example: ['read', 'write'],
     type: [String],
   },
   REDIRECT_URIS: {
@@ -38,15 +38,16 @@ export const CLIENT_PROPERTY_SWAGGER = {
       'Where the authorization endpoint may send a code for this client. ' +
       'Compared by exact match — no prefixes, no wildcards. Only needed for ' +
       'authorization_code.',
-    example: ['http://localhost:3001/api/auth/callback'],
+    example: ['http://localhost:3001/callback'],
     type: [String],
   },
   IS_PUBLIC: {
     description:
       'True for a client that cannot keep a secret — an SPA or a mobile app. ' +
-      'It is issued no `client_secret` at all, identifies itself at ' +
-      '`/oauth/token` with `client_id` in the body, and is protected by PKCE ' +
-      'alone (RFC 6749 §2.1).',
+      'It is issued no `client_secret` at all and identifies itself at ' +
+      '`/oauth/token` with `client_id` in the body (RFC 6749 §2.1). This ' +
+      'server implements no PKCE, so such a client is protected only by its ' +
+      'exact redirect URI and by `state`.',
     example: false,
     required: false,
   },

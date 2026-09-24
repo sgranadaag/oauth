@@ -10,6 +10,7 @@ import { ClientRepository } from '@modules/client/client.repository';
 import { UserService } from '@modules/user/user.service';
 import {
   DEFAULT_LOGIN_APP_URL,
+  NO_PROMPT,
   OAUTH_ERRORS,
 } from '@modules/oauth/oauth.constants';
 import { DEFAULT_GRANT_TYPES } from '@modules/client/client.constants';
@@ -103,6 +104,14 @@ export class SignInService {
       return this.issue(request, session.userId, session.email);
     }
 
+    if (query.prompt === NO_PROMPT) {
+      return buildUrl(redirectUri, {
+        error: OAUTH_ERRORS.LOGIN_REQUIRED,
+        error_description: 'there is no active session and prompt=none forbids asking for one',
+        state,
+      });
+    }
+
     return buildUrl(this.loginAppUrl(), { interaction: request.id });
   }
 
@@ -141,8 +150,11 @@ export class SignInService {
     return { redirectTo, sessionId: session.id };
   }
 
-  async endSession(sessionId?: string): Promise<void> {
-    await this.sessionService.end(sessionId);
+  async endSession(sessionId: string | undefined, clientId: string): Promise<void> {
+    const session = await this.sessionService.findActive(sessionId);
+    if (!session || session.clientId !== clientId) return;
+
+    await this.sessionService.end(session.id);
   }
 
   private async issue(

@@ -8,14 +8,18 @@ export const USER_SWAGGER = {
     operation: {
       summary: 'Create an account',
       description:
-        'Public, like signing up for any identity provider. The account is ' +
-        'not tied to any application: the same person signs in through ' +
-        'whichever client the auth server trusts.',
+        'Public, like signing up for any identity provider.\n\n' +
+        '**The account belongs to one client**, named by `clientId`, which ' +
+        'must already be registered. The same email under two clients is two ' +
+        'unrelated people, and an account can only ever sign in to its own ' +
+        'client.',
     },
     responses: {
       201: { description: 'Account created.' },
-      400: { description: 'The email is not a valid address.' },
-      409: { description: 'That email is already registered.' },
+      400: {
+        description: 'The email is not a valid address, or the client_id is unknown.',
+      },
+      409: { description: 'That email is already registered for this client.' },
     },
   },
 

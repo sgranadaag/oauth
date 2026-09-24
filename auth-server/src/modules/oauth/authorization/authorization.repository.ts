@@ -43,4 +43,16 @@ export class AuthorizationRepository {
 
     return result.modifiedCount === 1;
   }
+
+  async removeAllRequests(): Promise<number> {
+    const result = await this.requests.deleteMany({});
+
+    return result.deletedCount;
+  }
+
+  async removeAllCodes(): Promise<number> {
+    const result = await this.codes.deleteMany({});
+
+    return result.deletedCount;
+  }
 }

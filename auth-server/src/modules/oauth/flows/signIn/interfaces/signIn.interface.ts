@@ -4,6 +4,7 @@ export interface AuthorizeQuery {
   redirect_uri?: string;
   scope?: string;
   state?: string;
+  prompt?: string;
 }
 
 export interface Credentials {

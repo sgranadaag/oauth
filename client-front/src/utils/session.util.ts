@@ -1,4 +1,8 @@
-import { SESSION_KEY, TRANSACTION_KEY } from "@constants/session.constants";
+import {
+  SESSION_KEY,
+  SILENT_ATTEMPT_KEY,
+  TRANSACTION_KEY,
+} from "@constants/session.constants";
 import type { AuthorizationTransaction, Session } from "@shared/auth.types";
 
 /**
@@ -63,3 +67,17 @@ export const takeTransaction = (): AuthorizationTransaction | null => {
 
 export const storeTransaction = (transaction: AuthorizationTransaction): void =>
   write(TRANSACTION_KEY, transaction);
+
+/**
+ * Has this tab already asked the provider whether a session exists?
+ *
+ * Reads as `true` only for a stored `true`, so unavailable storage answers
+ * "not yet" and the attempt still happens. That alone would loop — the mark
+ * would not stick either — which is why the caller also refuses to attempt
+ * when the provider's answer is already in the URL. The flag saves a
+ * redirect; it is not what makes the loop impossible.
+ */
+export const hasTriedSilentSignIn = (): boolean =>
+  read<boolean>(SILENT_ATTEMPT_KEY) === true;
+
+export const markSilentSignInTried = (): void => write(SILENT_ATTEMPT_KEY, true);

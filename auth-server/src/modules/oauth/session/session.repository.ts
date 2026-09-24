@@ -23,4 +23,10 @@ export class SessionRepository {
   async remove(id: string): Promise<void> {
     await this.sessions.deleteOne({ id });
   }
+
+  async removeAll(): Promise<number> {
+    const result = await this.sessions.deleteMany({});
+
+    return result.deletedCount;
+  }
 }

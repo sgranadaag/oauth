@@ -9,3 +9,8 @@ export interface CodeSubject {
   id: string;
   email: string;
 }
+
+export interface ClearedAuthorizationRecords {
+  requests: number;
+  codes: number;
+}

@@ -13,7 +13,10 @@ import {
   REFRESH_TOKEN_TTL_SECONDS,
   REFRESH_TOKEN_TYPE,
   SESSION_TTL_SECONDS,
+  TOKEN_TYPE_HINTS,
 } from '@modules/oauth/token/token.constants';
+import { OAUTH_ERRORS } from '@modules/oauth/oauth.constants';
+import { OauthException } from '@modules/oauth/oauth.exception';
 import { TokenEntity } from '@modules/oauth/token/token.entity';
 import { TokenRepository } from '@modules/oauth/token/token.repository';
 import type {
@@ -71,7 +74,22 @@ export class TokenService {
     return issued;
   }
 
-  async revokeSession(tokenId: string, clientId: string): Promise<void> {
+  async revokeSession(
+    tokenId: string | undefined,
+    tokenTypeHint: string | undefined,
+    clientId: string,
+  ): Promise<void> {
+    if (!tokenId) {
+      throw new OauthException(OAUTH_ERRORS.INVALID_REQUEST, 'token is required');
+    }
+
+    if (tokenTypeHint && !TOKEN_TYPE_HINTS.includes(tokenTypeHint)) {
+      throw new OauthException(
+        OAUTH_ERRORS.UNSUPPORTED_TOKEN_TYPE,
+        `${tokenTypeHint} is not a token type this server stores`,
+      );
+    }
+
     const token = await this.tokenRepository.find(tokenId);
     if (!token || token.clientId !== clientId) return;
 

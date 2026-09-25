@@ -7,7 +7,6 @@ import { ConfigService } from '@nestjs/config';
 import { buildUrl } from '@common/utils/http.util';
 import { ENV } from '@core/config/env.config';
 import { ClientRepository } from '@modules/client/client.repository';
-import { UserService } from '@modules/user/user.service';
 import {
   DEFAULT_LOGIN_APP_URL,
   NO_PROMPT,
@@ -22,16 +21,13 @@ import { OauthException } from '@modules/oauth/oauth.exception';
 import type { RequestEntity } from '@modules/oauth/authorization/entities/request.entity';
 import type {
   AuthorizeQuery,
-  Credentials,
   InteractionDetails,
-  SignInResult,
 } from '@modules/oauth/flows/signIn/interfaces/signIn.interface';
 
 @Injectable()
 export class SignInService {
   constructor(
     private readonly clientRepository: ClientRepository,
-    private readonly userService: UserService,
     private readonly authorizationService: AuthorizationService,
     private readonly sessionService: SessionService,
     private readonly configService: ConfigService,
@@ -128,41 +124,23 @@ export class SignInService {
     const client = await this.clientRepository.find(request.clientId);
 
     return {
+      clientId: request.clientId,
       clientName: client?.name ?? request.clientId,
       scope: request.scope,
     };
   }
 
-  async complete(
-    interactionId: string,
-    { email, password }: Credentials,
-  ): Promise<SignInResult> {
+  async accept(interactionId: string, sessionId?: string): Promise<string> {
     const request = await this.assertActiveRequest(interactionId);
 
-    const user = await this.userService.verifyCredentials(
-      request.clientId,
-      email,
-      password,
-    );
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+    const session = await this.sessionService.findActive(sessionId);
+    if (!session || session.clientId !== request.clientId) {
+      throw new UnauthorizedException(
+        'There is no signed-in session for this client. Sign in first.',
+      );
     }
 
-    const redirectTo = await this.issue(request, user.id, user.email);
-    const session = await this.sessionService.start(
-      user.id,
-      user.email,
-      request.clientId,
-    );
-
-    return { redirectTo, sessionId: session.id };
-  }
-
-  async endSession(sessionId: string | undefined, clientId: string): Promise<void> {
-    const session = await this.sessionService.findActive(sessionId);
-    if (!session || session.clientId !== clientId) return;
-
-    await this.sessionService.end(session.id);
+    return this.issue(request, session.userId, session.email);
   }
 
   private async issue(

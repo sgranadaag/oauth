@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ClientRepository } from '@modules/client/client.repository';
 import {
@@ -52,12 +53,16 @@ export class UserService {
     clientId: string,
     email: string,
     password: string,
-  ): Promise<UserEntity | null> {
+  ): Promise<UserEntity> {
     const user = await this.userRepository.findByEmail(clientId, email);
 
     const passwordHash = user?.passwordHash ?? DUMMY_PASSWORD_HASH;
     const hasValidPassword = await verifyPassword(password, passwordHash);
 
-    return user && hasValidPassword ? user : null;
+    if (!user || !hasValidPassword) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return user;
   }
 }

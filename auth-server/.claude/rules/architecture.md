@@ -54,7 +54,7 @@ modules/
   client/                registered clients and their policy
   user/                  the accounts, scoped to one client
   oauth/                 the protocol (RFC 6749, no OIDC)
-    oauth.controller.ts  the entry point, and only that
+    oauth.controller.ts  the entry point: coordinates, never throws
     flows/               the coordinators, one per conversation
       signIn/            /authorize and the interaction endpoints
       tokenExchange/     /token, and one grant per grant_type
@@ -78,7 +78,7 @@ it asks the owners and decides only what to do with their answers.
 
 | Flow | Its conversation | Endpoints |
 | --- | --- | --- |
-| `signIn` | may this start, who is this, here is a code | `/authorize`, `/interactions/*` |
+| `signIn` | may this start, is someone signed in, here is a code | `/authorize`, `/interactions/*` |
 | `tokenExchange` | here is a claim, here are tokens | `/token` |
 
 **A flow exists only where the conversation has more than one turn.**
@@ -90,6 +90,24 @@ nothing.
 page** — neither word appears in the other's file. That is the test that
 the cut is in the right place, and it is worth re-running after any
 change here.
+
+**Authenticating a person and accepting an interaction are independent.**
+`POST /oauth/login` reads a password and opens a session; it knows
+nothing about pending requests and takes the `clientId` from its caller.
+`signIn` turns a pending request into a code for whoever the session
+cookie names; it never reads a password and never opens a session. The
+login page joins them — `POST /oauth/login`, then
+`POST /oauth/interactions/:id/accept` — and the `/authorize` shortcut is
+the same `accept` path reached without the page. **`signIn` never sees a
+password.**
+
+**`/login` has no flow either: the controller is its coordinator.** It
+asks `UserService.verifyCredentials`, which throws the 401 itself (the
+same one for an unknown email and a wrong password), then asks
+`SessionService` to open the session — two owners, written inline. A `LoginService` (and before it an
+`AuthenticationService`) holding those five lines was removed as a step
+that added nothing; don't reintroduce it. `/revoke` ends the browser
+session the same way, straight on `SessionService`.
 
 ## Where a file goes inside a module
 
@@ -370,11 +388,11 @@ something from `oauth` has its responsibility in the wrong place.
   reintroduce either as an improvement** — PKCE is the first thing a real
   public client would add, but it is a separate spec (RFC 7636) and a
   separate lesson.
-- **`oauth` owns the accounts.** `SignInService` asks `UserService` to
+- **`oauth` owns the accounts.** `OauthController.login` asks `UserService` to
   check a password directly: this server is the identity manager, not a
   broker standing in front of one. There is no login-app credential and no
   `/users/verify` — the login page is a pure frontend that carries the
-  credentials to `POST /oauth/interactions/:id/login` and holds nothing.
+  credentials to `POST /oauth/login` and holds nothing.
 - **An account belongs to one client.** `UserEntity.clientId`, with a
   unique index on `(clientId, email)`: the same address under two clients
   is two unrelated people. The session carries `clientId` too, so it can
@@ -401,6 +419,14 @@ something from `oauth` has its responsibility in the wrong place.
   mapping of `IssuedTokens` to the §5.1 body. A grant returning
   `access_token` keys, or `TokenService` throwing an `invalid_scope`,
   is that boundary leaking.
+
+  **One deliberate exception: revocation.** `TokenService.revokeSession`
+  validates the RFC 7009 request itself — `invalid_request` without a
+  `token`, `unsupported_token_type` for a hint outside
+  `TOKEN_TYPE_HINTS` — and throws the `OauthException`, so the controller
+  throws nothing. The user chose this over a revoke flow. Likewise
+  `SessionService.end(id, clientId)` decides on its own that a cookie
+  belonging to another client is left alone.
 - **One `<name>Grant.service.ts` per grant**, in
   `grant/services/`, an `@Injectable()` implementing `GrantHandler`
   — a single `handle(client, params)` returning `IssuedTokens`.
@@ -424,7 +450,7 @@ something from `oauth` has its responsibility in the wrong place.
   grant**; a grant that signs its own token is a grant reimplementing
   `TokenService`.
 - **No grant takes a password.** The only endpoint that reads one is
-  `POST /oauth/interactions/:id/login`, reached from the login page after
+  `POST /oauth/login`, reached from the login page after
   the browser has already been redirected there — never from a client.
   The `password` grant (RFC 6749 §4.3) was removed on purpose: it hands
   the client the credential the whole flow exists to keep away from it.

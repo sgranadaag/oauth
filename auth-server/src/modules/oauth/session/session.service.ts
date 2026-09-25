@@ -39,10 +39,11 @@ export class SessionService {
     return session;
   }
 
-  async end(id?: string): Promise<void> {
-    if (!id) return;
+  async end(id: string | undefined, clientId: string): Promise<void> {
+    const session = await this.findActive(id);
+    if (!session || session.clientId !== clientId) return;
 
-    await this.sessionRepository.remove(id);
+    await this.sessionRepository.remove(session.id);
   }
 
   removeAll(): Promise<number> {

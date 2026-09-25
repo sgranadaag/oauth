@@ -22,13 +22,10 @@ import type {
   BasicTokenRequest,
 } from '@common/interfaces/authenticatedRequest.interface';
 import { OAUTH_SWAGGER } from '@modules/oauth/oauth.swagger';
-import {
-  MILLISECONDS_PER_SECOND,
-  OAUTH_ERRORS,
-  TOKEN_TYPE_HINTS,
-} from '@modules/oauth/oauth.constants';
-import { OauthException } from '@modules/oauth/oauth.exception';
-import { InteractionLoginDto } from '@modules/oauth/dto/interactionLogin.dto';
+import { MILLISECONDS_PER_SECOND } from '@modules/oauth/oauth.constants';
+import { LoginDto } from '@modules/oauth/dto/login.dto';
+import { UserService } from '@modules/user/user.service';
+import { SessionService } from '@modules/oauth/session/session.service';
 import { SignInService } from '@modules/oauth/flows/signIn/signIn.service';
 import { TokenExchangeService } from '@modules/oauth/flows/tokenExchange/tokenExchange.service';
 import { TokenService } from '@modules/oauth/token/token.service';
@@ -52,6 +49,8 @@ import type { JwkSet } from '@modules/oauth/token/interfaces/jwks.interface';
 @Controller('oauth')
 export class OauthController {
   constructor(
+    private readonly userService: UserService,
+    private readonly sessionService: SessionService,
     private readonly signInService: SignInService,
     private readonly tokenExchangeService: TokenExchangeService,
     private readonly tokenService: TokenService,
@@ -80,30 +79,50 @@ export class OauthController {
     return this.signInService.describe(interactionId);
   }
 
-  @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_LOGIN)
-  @Post('interactions/:interactionId/login')
+  @SwaggerDocs(OAUTH_SWAGGER.INTERACTION_ACCEPT)
+  @Post('interactions/:interactionId/accept')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @Header('Pragma', 'no-cache')
-  async loginInteraction(
+  async acceptInteraction(
+    @Req() request: AuthorizeRequest,
     @Param('interactionId') interactionId: string,
-    @Body() dto: InteractionLoginDto,
-    @Res({ passthrough: true }) response: Response,
   ): Promise<{ redirectTo: string }> {
-    const { redirectTo, sessionId } = await this.signInService.complete(
+    const redirectTo = await this.signInService.accept(
       interactionId,
-      dto,
+      request.cookies?.[SESSION_COOKIE],
     );
 
-    response.cookie(SESSION_COOKIE, sessionId, {
+    return { redirectTo };
+  }
+
+  @SwaggerDocs(OAUTH_SWAGGER.LOGIN)
+  @Post('login')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
+  async login(
+    @Body() { clientId, email, password }: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const user = await this.userService.verifyCredentials(
+      clientId,
+      email,
+      password,
+    );
+    const session = await this.sessionService.start(
+      user.id,
+      user.email,
+      clientId,
+    );
+
+    response.cookie(SESSION_COOKIE, session.id, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: SESSION_TTL_SECONDS * MILLISECONDS_PER_SECOND,
     });
-
-    return { redirectTo };
   }
 
   @SwaggerDocs(OAUTH_SWAGGER.TOKEN)
@@ -130,20 +149,16 @@ export class OauthController {
     @Res({ passthrough: true }) response: Response,
     @Body() params: RevokeRequestParams,
   ): Promise<void> {
-    if (!params.token) {
-      throw new OauthException(OAUTH_ERRORS.INVALID_REQUEST, 'token is required');
-    }
+    await this.tokenService.revokeSession(
+      params.token,
+      params.token_type_hint,
+      request.client.id,
+    );
 
-    const hint = params.token_type_hint;
-    if (hint && !TOKEN_TYPE_HINTS.includes(hint)) {
-      throw new OauthException(
-        OAUTH_ERRORS.UNSUPPORTED_TOKEN_TYPE,
-        `${hint} is not a token type this server stores`,
-      );
-    }
-
-    const sessionId = request.cookies?.[SESSION_COOKIE];
-    await this.signInService.endSession(sessionId, request.client.id);
+    await this.sessionService.end(
+      request.cookies?.[SESSION_COOKIE],
+      request.client.id,
+    );
 
     response.clearCookie(SESSION_COOKIE, {
       httpOnly: true,
@@ -151,8 +166,6 @@ export class OauthController {
       secure: process.env.NODE_ENV === 'production',
       path: '/',
     });
-
-    await this.tokenService.revokeSession(params.token, request.client.id);
   }
 
   @SwaggerDocs(OAUTH_SWAGGER.JWKS)

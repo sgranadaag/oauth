@@ -1,4 +1,5 @@
 export interface InteractionDetails {
+  clientId: string;
   clientName: string;
   scope: string;
 }
@@ -8,10 +9,12 @@ export interface LoginCredentials {
   password: string;
 }
 
-export interface LoginResult {
+export interface AcceptResult {
   redirectTo: string;
 }
 
-export type SignInOutcome =
+export type LoginOutcome = { ok: true } | { ok: false; reason: string };
+
+export type AcceptOutcome =
   | { ok: true; redirectTo: string }
   | { ok: false; reason: string };

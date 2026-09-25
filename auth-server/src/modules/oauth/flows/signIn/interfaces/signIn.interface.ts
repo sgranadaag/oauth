@@ -7,17 +7,8 @@ export interface AuthorizeQuery {
   prompt?: string;
 }
 
-export interface Credentials {
-  email: string;
-  password: string;
-}
-
 export interface InteractionDetails {
+  clientId: string;
   clientName: string;
   scope: string;
-}
-
-export interface SignInResult {
-  redirectTo: string;
-  sessionId?: string;
 }

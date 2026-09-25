@@ -50,7 +50,8 @@ export const OAUTH_SWAGGER = {
       summary: 'Describe a pending sign-in',
       description:
         'What the login page shows while the person decides: which client is ' +
-        'asking and for which scopes.\n\n' +
+        'asking and for which scopes — and that client\'s id, which the page ' +
+        'needs to sign the person in to the right account.\n\n' +
         'Open on purpose: the login page is a pure frontend and holds no ' +
         'credential. Knowing the id reveals only a client name and a scope ' +
         'list, and the id is unguessable, single-use and short-lived — ' +
@@ -58,33 +59,54 @@ export const OAUTH_SWAGGER = {
     },
     params: [{ name: 'interactionId', description: 'From the login page URL.' }],
     responses: {
-      200: { description: 'The client name and the scope being requested.' },
+      200: { description: 'The client id and name, and the scope being requested.' },
       404: { description: 'Unknown or expired interaction.' },
     },
   },
 
-  INTERACTION_LOGIN: {
+  INTERACTION_ACCEPT: {
     operation: {
-      summary: 'Complete a pending sign-in with credentials',
+      summary: 'Accept a pending sign-in',
       description:
-        'Called by the login page from the browser, with the email and ' +
-        'password the person typed. This server owns the accounts, so it ' +
-        'checks them itself — there is no credential on the caller, which is ' +
-        'why the login page can be a pure frontend.\n\n' +
-        'On success it issues a single-use code, answers where to send the ' +
-        'browser (`{ redirectTo }`), and sets an **httpOnly session cookie** ' +
-        'on this origin. The next authorization request carrying that cookie ' +
-        'skips this page entirely.\n\n' +
-        'The session records the client it was opened for and shortcuts only ' +
-        'that one: accounts belong to a client, so this is **not** SSO.\n\n' +
-        'A wrong email and a wrong password answer the same 401: telling ' +
-        'them apart would list which emails are registered.',
+        'Called by the login page once the person is signed in. It takes no ' +
+        'credentials: who is accepting is read from the **session cookie** ' +
+        'that `POST /oauth/login` set, and that session must belong to the ' +
+        'same client the interaction was started for.\n\n' +
+        'On success it issues a single-use code and answers where to send ' +
+        'the browser (`{ redirectTo }`). It never opens or extends a session ' +
+        '— authenticating the person is a separate flow.',
     },
     params: [{ name: 'interactionId', description: 'From the login page URL.' }],
     responses: {
       200: { description: '`{ redirectTo }` — back to the client with the code.' },
-      401: { description: 'Wrong email or password.' },
+      401: { description: 'No active session for the client of this interaction.' },
       404: { description: 'Unknown, expired or already completed interaction.' },
+    },
+  },
+
+  LOGIN: {
+    operation: {
+      summary: 'Authenticate a person and open a browser session',
+      description:
+        'Called by the login page from the browser, with the client the ' +
+        'account belongs to and the email and password the person typed. ' +
+        'This server owns the accounts, so it checks them itself — there is ' +
+        'no credential on the caller, which is why the login page can be a ' +
+        'pure frontend.\n\n' +
+        'It knows nothing about pending authorization requests: on success ' +
+        'it only sets an **httpOnly session cookie** on this origin. Turning ' +
+        'that session into a code is `POST /oauth/interactions/:id/accept`, ' +
+        'and the next authorization request carrying the cookie skips the ' +
+        'login page entirely.\n\n' +
+        'The session records the client it was opened for and shortcuts only ' +
+        'that one: accounts belong to a client, so this is **not** SSO.\n\n' +
+        'A wrong email, a wrong password and an unknown client answer the ' +
+        'same 401: telling them apart would list which accounts exist.',
+    },
+    responses: {
+      204: { description: 'Signed in; the session cookie is set.' },
+      400: { description: 'A missing clientId, or an email that is not an address.' },
+      401: { description: 'Wrong credentials.' },
     },
   },
 

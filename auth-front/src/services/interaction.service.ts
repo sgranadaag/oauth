@@ -3,12 +3,14 @@ import {
   INTERACTION_EXPIRED,
   INVALID_CREDENTIALS,
   PROVIDER_UNAVAILABLE,
+  SESSION_REQUIRED,
 } from "@constants/interaction.constants";
 import type {
+  AcceptOutcome,
+  AcceptResult,
   InteractionDetails,
   LoginCredentials,
-  LoginResult,
-  SignInOutcome,
+  LoginOutcome,
 } from "@shared/interaction.types";
 
 const interactionUrl = (interactionId: string, path = ""): URL =>
@@ -36,31 +38,59 @@ export const findInteraction = async (
 /**
  * Hands the credentials to the auth server, which owns the accounts.
  *
- * This app never judges a password — it only carries it.
+ * This app never judges a password — it only carries it. A success opens a
+ * session on the auth server (an httpOnly cookie this app cannot read) and
+ * nothing else: the pending sign-in is left for `acceptInteraction`.
  *
- * @returns Where to send the browser next, or the reason it did not work.
+ * @param clientId - The client the account belongs to; accounts are scoped per client.
+ * @returns Whether the person is now signed in, or the reason they are not.
  */
-export const signIn = async (
-  interactionId: string,
+export const login = async (
+  clientId: string,
   credentials: LoginCredentials,
-): Promise<SignInOutcome> => {
+): Promise<LoginOutcome> => {
   let response: Response;
   try {
-    response = await fetch(interactionUrl(interactionId, "/login"), {
+    response = await fetch(new URL("/oauth/login", AUTH_SERVER_URL), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(credentials),
+      body: JSON.stringify({ clientId, ...credentials }),
     });
   } catch {
     return { ok: false, reason: PROVIDER_UNAVAILABLE };
   }
 
   if (response.status === 401) return { ok: false, reason: INVALID_CREDENTIALS };
+  if (!response.ok) return { ok: false, reason: PROVIDER_UNAVAILABLE };
+
+  return { ok: true };
+};
+
+/**
+ * Accepts the pending sign-in on behalf of whoever is signed in.
+ *
+ * It sends no credentials: the auth server reads its own session cookie, so
+ * this only works after `login` succeeded for the same client.
+ *
+ * @returns Where to send the browser next, or the reason it did not work.
+ */
+export const acceptInteraction = async (interactionId: string): Promise<AcceptOutcome> => {
+  let response: Response;
+  try {
+    response = await fetch(interactionUrl(interactionId, "/accept"), {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    return { ok: false, reason: PROVIDER_UNAVAILABLE };
+  }
+
+  if (response.status === 401) return { ok: false, reason: SESSION_REQUIRED };
   if (response.status === 404) return { ok: false, reason: INTERACTION_EXPIRED };
   if (!response.ok) return { ok: false, reason: PROVIDER_UNAVAILABLE };
 
-  const { redirectTo } = (await response.json()) as LoginResult;
+  const { redirectTo } = (await response.json()) as AcceptResult;
 
   return { ok: true, redirectTo };
 };

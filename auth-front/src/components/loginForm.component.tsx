@@ -5,14 +5,16 @@ import { useState, type FormEvent, type ReactElement } from "react";
 import {
   INTERACTION_EXPIRED,
   INVALID_CREDENTIALS,
+  SESSION_REQUIRED,
 } from "@constants/interaction.constants";
-import { signIn } from "@services/interaction.service";
+import { acceptInteraction, login } from "@services/interaction.service";
 import type { InteractionDetails } from "@shared/interaction.types";
 
 const FAILURE_MESSAGES: Record<string, string> = {
   [INVALID_CREDENTIALS]: "Wrong email or password.",
   [INTERACTION_EXPIRED]:
     "This sign-in link has expired. Go back to the application and start again.",
+  [SESSION_REQUIRED]: "Your session ended before the request was accepted. Sign in again.",
 };
 const UNAVAILABLE_MESSAGE = "The provider is not available right now. Try again in a moment.";
 
@@ -20,7 +22,12 @@ interface LoginFormProps extends InteractionDetails {
   interactionId: string;
 }
 
-export const LoginForm = ({ interactionId, clientName, scope }: LoginFormProps): ReactElement => {
+export const LoginForm = ({
+  interactionId,
+  clientId,
+  clientName,
+  scope,
+}: LoginFormProps): ReactElement => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -31,15 +38,23 @@ export const LoginForm = ({ interactionId, clientName, scope }: LoginFormProps):
     setIsSubmitting(true);
     setError(null);
 
-    const outcome = await signIn(interactionId, { email, password });
+    const loginOutcome = await login(clientId, { email, password });
 
-    if (!outcome.ok) {
-      setError(FAILURE_MESSAGES[outcome.reason] ?? UNAVAILABLE_MESSAGE);
+    if (!loginOutcome.ok) {
+      setError(FAILURE_MESSAGES[loginOutcome.reason] ?? UNAVAILABLE_MESSAGE);
       setIsSubmitting(false);
       return;
     }
 
-    window.location.assign(outcome.redirectTo);
+    const acceptOutcome = await acceptInteraction(interactionId);
+
+    if (!acceptOutcome.ok) {
+      setError(FAILURE_MESSAGES[acceptOutcome.reason] ?? UNAVAILABLE_MESSAGE);
+      setIsSubmitting(false);
+      return;
+    }
+
+    window.location.assign(acceptOutcome.redirectTo);
   };
 
   return (
